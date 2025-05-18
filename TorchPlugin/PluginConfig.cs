@@ -11,6 +11,7 @@ namespace TorchPlugin
         private bool enabled = true;
         private bool detectCodeChanges = true;
         private bool enableHttpListener = true;
+        private int httpPort = 8080;
         // TODO: Implement your config fields and add the default values for Torch here.
         //       Be more conservative with changes and introduce new features as disabled
         //       at first, so admins can enable them first on their test deployments.
@@ -36,6 +37,13 @@ namespace TorchPlugin
         {
             get => enableHttpListener;
             set => SetValue(ref enableHttpListener, value);
+        }
+
+        [Display(Order = 4, GroupName = "General", Name = "HTTP Listener Port", Description = "Port for the built-in HTTP listener")]
+        public int HttpPort
+        {
+            get => httpPort;
+            set => SetValue(ref httpPort, value);
         }
 
         // TODO: Encapsulate them as properties and define their Display properties

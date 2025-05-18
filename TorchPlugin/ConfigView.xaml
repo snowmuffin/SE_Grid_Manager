@@ -43,7 +43,10 @@
         <CheckBox Grid.Row="3" Grid.Column="1" Name="EnableHttpListener" IsChecked="{Binding EnableHttpListener}" Margin="5" />
         <TextBlock Grid.Row="3" Grid.Column="2" Grid.ColumnSpan="2" Text="Enable or disable the built-in HTTP listener (/ping endpoint)" VerticalAlignment="Center" Margin="5" />
 
-        <Button Grid.Row="4" Grid.Column="1" Grid.ColumnSpan="2" Content="설정 저장" Margin="5" Click="SaveButton_OnClick" />
+        <TextBlock Grid.Row="4" Grid.Column="0" Text="HTTP Listener Port" VerticalAlignment="Center" Margin="5" />
+        <TextBox Grid.Row="4" Grid.Column="1" Grid.ColumnSpan="2" Name="HttpPort" Text="{Binding HttpPort}" Margin="5" />
+
+        <Button Grid.Row="5" Grid.Column="1" Grid.ColumnSpan="2" Content="설정 저장" Margin="5" Click="SaveButton_OnClick" />
 
         <!-- TODO: Add UI for your configuration properties, examples:
 

@@ -53,8 +53,8 @@ namespace TorchPlugin
         private bool initialized;
         private bool failed;
 
-
-
+        private System.Net.HttpListener httpListener;
+        private string ListenerPrefix => $"http://localhost:{Config?.HttpPort ?? 8080}/";
 
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
         public override void Init(ITorchBase torch)
@@ -66,11 +66,28 @@ namespace TorchPlugin
             sessionManager.SessionStateChanged += SessionStateChanged;
 
             initialized = true;
+
+            // Start HTTP listener if enabled
+            if (Config != null && Config.EnableHttpListener)
+            {
+                try
+                {
+                    httpListener = new System.Net.HttpListener();
+                    httpListener.Prefixes.Add(ListenerPrefix);
+                    httpListener.Start();
+                    httpListener.BeginGetContext(OnHttpRequest, null);
+                    Log.Info($"HTTP Listener started at {ListenerPrefix}");
+                }
+                catch (Exception ex)
+                {
+                    Log.Error($"Failed to start HTTP Listener: {ex.Message}");
+                }
+            }
         }
 
         private void SetupConfig()
         {
-            var configFile = Path.Combine(StoragePath,ConfigFileName);
+            var configFile = Path.Combine(StoragePath, ConfigFileName);
 
             try
             {
@@ -114,6 +131,64 @@ namespace TorchPlugin
             }
         }
 
+        public IMyPlayer GetPlayerBySteamId(ulong steamId)
+        {
+            var players = new List<IMyPlayer>();
+            MyAPIGateway.Players.GetPlayers(players);
+            return players.FirstOrDefault(p => p.SteamUserId == steamId);
+        }
+
+        public List<IMyCubeGrid> GetGridsWithPlayerBlocks(IMyPlayer player)
+        {
+            var result = new List<IMyCubeGrid>();
+            if (player == null)
+                return result;
+
+            var entities = new HashSet<IMyEntity>();
+            MyAPIGateway.Entities.GetEntities(entities, e => e is IMyCubeGrid);
+            foreach (var entity in entities)
+            {
+                var cubeGrid = entity as IMyCubeGrid;
+                if (cubeGrid == null) continue;
+                var blocks = new List<IMySlimBlock>();
+                cubeGrid.GetBlocks(blocks);
+                if (blocks.Any(b => b.OwnerId == player.IdentityId))
+                {
+                    result.Add(cubeGrid);
+                }
+            }
+            return result;
+        }
+
+        private void OnHttpRequest(IAsyncResult ar)
+        {
+            if (httpListener == null || !httpListener.IsListening)
+                return;
+            System.Net.HttpListenerContext context = null;
+            try
+            {
+                context = httpListener.EndGetContext(ar);
+                httpListener.BeginGetContext(OnHttpRequest, null);
+                var request = context.Request;
+                var response = context.Response;
+                if (request.Url.AbsolutePath == "/ping")
+                {
+                    var buffer = System.Text.Encoding.UTF8.GetBytes("pong");
+                    response.ContentLength64 = buffer.Length;
+                    response.OutputStream.Write(buffer, 0, buffer.Length);
+                }
+                else
+                {
+                    response.StatusCode = 404;
+                }
+                response.OutputStream.Close();
+            }
+            catch (Exception ex)
+            {
+                Log.Error($"HTTP Listener error: {ex.Message}");
+                try { context?.Response.OutputStream.Close(); } catch { }
+            }
+        }
 
         public void Save()
         {
@@ -158,6 +233,22 @@ namespace TorchPlugin
 
                 sessionManager.SessionStateChanged -= SessionStateChanged;
                 sessionManager = null;
+
+                // Stop HTTP listener
+                if (httpListener != null)
+                {
+                    try
+                    {
+                        httpListener.Stop();
+                        httpListener.Close();
+                        Log.Info("HTTP Listener stopped");
+                    }
+                    catch (Exception ex)
+                    {
+                        Log.Error($"Error stopping HTTP Listener: {ex.Message}");
+                    }
+                    httpListener = null;
+                }
 
                 Log.Debug("Disposed");
             }
