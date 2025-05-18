@@ -181,7 +181,7 @@ namespace TorchPlugin
                     response.OutputStream.Write(buffer, 0, buffer.Length);
                     response.OutputStream.Close();
                 }
-                else if (request.Url.AbsolutePath == "/check-steamid" && request.HttpMethod == "POST")
+                else if (request.Url.AbsolutePath == "/Update-Grid" && request.HttpMethod == "POST")
                 {
                     using (var reader = new StreamReader(request.InputStream, request.ContentEncoding))
                     {
