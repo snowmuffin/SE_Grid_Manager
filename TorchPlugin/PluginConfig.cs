@@ -12,7 +12,7 @@ namespace TorchPlugin
         private bool detectCodeChanges = true;
         private bool enableHttpListener = true;
         private int httpPort = 8080;
-        private string notifyHostAddress = "http://localhost";
+        private string WebHostAddress = "http://localhost";
         // TODO: Implement your config fields and add the default values for Torch here.
         //       Be more conservative with changes and introduce new features as disabled
         //       at first, so admins can enable them first on their test deployments.
@@ -48,10 +48,10 @@ namespace TorchPlugin
         }
 
         [Display(Order = 5, GroupName = "General", Name = "Notify Host Address", Description = "Host address for /notify-grids endpoint (e.g. http://localhost)")]
-        public string NotifyHostAddress
+        public string WebHostAddress
         {
-            get => notifyHostAddress;
-            set => SetValue(ref notifyHostAddress, value);
+            get => WebHostAddress;
+            set => SetValue(ref WebHostAddress, value);
         }
 
         // TODO: Encapsulate them as properties and define their Display properties

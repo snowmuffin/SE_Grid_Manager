@@ -236,8 +236,8 @@ namespace TorchPlugin
                     };
                     var json = Newtonsoft.Json.JsonConvert.SerializeObject(payload);
                     var content = new StringContent(json, Encoding.UTF8, "application/json");
-                    var notifyUrl = (Config?.NotifyHostAddress ?? "http://localhost") + ":" + (Config?.HttpPort ?? 8080) + "/notify-grids";
-                    await client.PostAsync(notifyUrl, content);
+                    var webhostUrl = (Config?.WebHostAddress ?? "http://localhost") + "/gridlist";
+                    await client.PostAsync(webhostUrl, content);
                 }
             }
             catch (Exception ex)

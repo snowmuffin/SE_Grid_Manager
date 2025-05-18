@@ -49,7 +49,7 @@
         <TextBox Grid.Row="4" Grid.Column="1" Grid.ColumnSpan="2" Name="HttpPort" Text="{Binding HttpPort}" Margin="5" />
 
         <TextBlock Grid.Row="5" Grid.Column="0" Text="Notify Host Address" VerticalAlignment="Center" Margin="5" />
-        <TextBox Grid.Row="5" Grid.Column="1" Grid.ColumnSpan="2" Name="NotifyHostAddress" Text="{Binding NotifyHostAddress}" Margin="5" />
+        <TextBox Grid.Row="5" Grid.Column="1" Grid.ColumnSpan="2" Name="WebHostAddress" Text="{Binding WebHostAddress}" Margin="5" />
 
         <Button Grid.Row="6" Grid.Column="1" Grid.ColumnSpan="2" Content="설정 저장" Margin="5" Click="SaveButton_OnClick" />
 
