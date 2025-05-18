@@ -10,6 +10,7 @@ namespace TorchPlugin
     {
         private bool enabled = true;
         private bool detectCodeChanges = true;
+        private bool enableHttpListener = true;
         // TODO: Implement your config fields and add the default values for Torch here.
         //       Be more conservative with changes and introduce new features as disabled
         //       at first, so admins can enable them first on their test deployments.
@@ -28,6 +29,13 @@ namespace TorchPlugin
         {
             get => detectCodeChanges;
             set => SetValue(ref detectCodeChanges, value);
+        }
+
+        [Display(Order = 3, GroupName = "General", Name = "Enable HTTP Listener", Description = "Enable or disable the built-in HTTP listener (/ping endpoint)")]
+        public bool EnableHttpListener
+        {
+            get => enableHttpListener;
+            set => SetValue(ref enableHttpListener, value);
         }
 
         // TODO: Encapsulate them as properties and define their Display properties

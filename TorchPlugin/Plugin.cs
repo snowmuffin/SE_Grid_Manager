@@ -1,12 +1,21 @@
 ﻿#define USE_HARMONY
 
 using System;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
+using System.Net.Http;
 using System.Text;
 using System.Threading;
+using System.Threading.Tasks;
 using System.Windows.Controls;
 using HarmonyLib;
+using Newtonsoft.Json;
 using Sandbox.Game;
+using Sandbox.Game.Entities;
+using Sandbox.Game.Entities.Character;
+using Sandbox.ModAPI;
 using Shared.Config;
 using Shared.Logging;
 using Shared.Patches;
@@ -17,65 +26,41 @@ using Torch.API.Managers;
 using Torch.API.Plugins;
 using Torch.API.Session;
 using Torch.Session;
+using VRage.Game.Entity;
+using VRage.Game.ModAPI;
+using VRage.ModAPI;
+using VRage.ObjectBuilders;
 using VRage.Utils;
 
 namespace TorchPlugin
 {
-    // ReSharper disable once ClassNeverInstantiated.Global
-    public class Plugin : TorchPluginBase, IWpfPlugin, ICommonPlugin
+    public sealed class Plugin : TorchPluginBase, IWpfPlugin
     {
-        public const string PluginName = "Gridmanager";
+        public const string PluginName = "Se_web";
         public static Plugin Instance { get; private set; }
-
         public long Tick { get; private set; }
 
+        private static readonly IPluginLogger Logger = new PluginLogger("Se_web");
         public IPluginLogger Log => Logger;
-        private static readonly IPluginLogger Logger = new PluginLogger(PluginName);
 
-        public IPluginConfig Config => config?.Data;
-        private PersistentConfig<PluginConfig> config;
+        public PluginConfig Config => _config?.Data;
         private static readonly string ConfigFileName = $"{PluginName}.cfg";
 
-        // ReSharper disable once UnusedMember.Global
-        public UserControl GetControl() => control ?? (control = new ConfigView());
-        private ConfigView control;
-
+        public UserControl GetControl() => _control ?? (_control = new ConfigView(this));
+        private Persistent<PluginConfig> _config;
+        private ConfigView _control;
         private TorchSessionManager sessionManager;
-
         private bool initialized;
         private bool failed;
 
-        // ReSharper disable once UnusedMember.Local
-        private readonly Commands commands = new Commands();
+
+
 
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
         public override void Init(ITorchBase torch)
         {
             base.Init(torch);
-
-#if DEBUG
-            // Allow the debugger some time to connect once the plugin assembly is loaded
-            Thread.Sleep(100);
-#endif
-
-            Instance = this;
-
-            Log.Info("Init");
-
-            var configPath = Path.Combine(StoragePath, ConfigFileName);
-            config = PersistentConfig<PluginConfig>.Load(Log, configPath);
-
-            var gameVersionNumber = MyPerGameSettings.BasicGameInfo.GameVersion ?? 0;
-            var gameVersion = new StringBuilder(MyBuildNumbers.ConvertBuildNumberFromIntToString(gameVersionNumber)).ToString();
-            Common.SetPlugin(this, gameVersion, StoragePath);
-
-#if USE_HARMONY
-            if (!PatchHelpers.HarmonyPatchAll(Log, new Harmony(Name)))
-            {
-                failed = true;
-                return;
-            }
-#endif
+            SetupConfig();
 
             sessionManager = torch.Managers.GetManager<TorchSessionManager>();
             sessionManager.SessionStateChanged += SessionStateChanged;
@@ -83,6 +68,65 @@ namespace TorchPlugin
             initialized = true;
         }
 
+        private void SetupConfig()
+        {
+            var configFile = Path.Combine(StoragePath,ConfigFileName);
+
+            try
+            {
+                _config = Persistent<PluginConfig>.Load(configFile);
+            }
+            catch (Exception e)
+            {
+                Log.Info(e.Message);
+            }
+
+            if (_config?.Data == null)
+            {
+                Log.Info("Create Default Config, because none was found!");
+
+                _config = new Persistent<PluginConfig>(configFile, new PluginConfig());
+                Save();
+            }
+        }
+
+        private ulong GetSteamIdFromEntity(IMyEntity entity)
+        {
+            switch (entity)
+            {
+                case MyCharacter character when character.ControllerInfo != null:
+                    var players = new List<IMyPlayer>();
+                    MyAPIGateway.Players.GetPlayers(players);
+                    return players.FirstOrDefault(p => p.Character == character)?.SteamUserId ?? 0;
+
+                case IMyCubeGrid grid:
+                    long ownerId = grid.BigOwners.FirstOrDefault();
+                    return MyAPIGateway.Players.TryGetSteamId(ownerId);
+
+                case IMyCubeBlock block:
+                    return MyAPIGateway.Players.TryGetSteamId(block.OwnerId);
+
+                case IMyGunBaseUser gunBaseUser:
+                    return MyAPIGateway.Players.TryGetSteamId(gunBaseUser.OwnerId);
+
+                default:
+                    return 0;
+            }
+        }
+
+
+        public void Save()
+        {
+            try
+            {
+                _config.Save();
+                Log.Info("Configuration Saved.");
+            }
+            catch (IOException e)
+            {
+                Log.Info(e, "Configuration failed to save");
+            }
+        }
         private void SessionStateChanged(ITorchSession session, TorchSessionState newstate)
         {
             switch (newstate)
@@ -92,11 +136,12 @@ namespace TorchPlugin
                     break;
 
                 case TorchSessionState.Loaded:
-                    Log.Debug("Loaded");
+
                     break;
 
                 case TorchSessionState.Unloading:
                     Log.Debug("Unloading");
+
                     break;
 
                 case TorchSessionState.Unloaded:
@@ -125,7 +170,9 @@ namespace TorchPlugin
         public override void Update()
         {
             if (failed)
+            {
                 return;
+            }
 
             try
             {
@@ -141,7 +188,6 @@ namespace TorchPlugin
 
         private void CustomUpdate()
         {
-            // TODO: Put your update processing here. It is called on every simulation frame!
             PatchHelpers.PatchUpdates();
         }
     }
