@@ -138,26 +138,28 @@ namespace TorchPlugin
             return players.FirstOrDefault(p => p.SteamUserId == steamId);
         }
 
-        public List<IMyCubeGrid> GetGridsWithPlayerBlocks(IMyPlayer player)
+        public async Task<List<IMyCubeGrid>> GetGridsWithPlayerBlocksAsync(IMyPlayer player)
         {
-            var result = new List<IMyCubeGrid>();
-            if (player == null)
-                return result;
+            return await Task.Run(() => {
+                var result = new List<IMyCubeGrid>();
+                if (player == null)
+                    return result;
 
-            var entities = new HashSet<IMyEntity>();
-            MyAPIGateway.Entities.GetEntities(entities, e => e is IMyCubeGrid);
-            foreach (var entity in entities)
-            {
-                var cubeGrid = entity as IMyCubeGrid;
-                if (cubeGrid == null) continue;
-                var blocks = new List<IMySlimBlock>();
-                cubeGrid.GetBlocks(blocks);
-                if (blocks.Any(b => b.OwnerId == player.IdentityId))
+                var entities = new HashSet<IMyEntity>();
+                MyAPIGateway.Entities.GetEntities(entities, e => e is IMyCubeGrid);
+                foreach (var entity in entities)
                 {
-                    result.Add(cubeGrid);
+                    var cubeGrid = entity as IMyCubeGrid;
+                    if (cubeGrid == null) continue;
+                    var blocks = new List<IMySlimBlock>();
+                    cubeGrid.GetBlocks(blocks);
+                    if (blocks.Any(b => b.OwnerId == player.IdentityId))
+                    {
+                        result.Add(cubeGrid);
+                    }
                 }
-            }
-            return result;
+                return result;
+            });
         }
 
         private void OnHttpRequest(IAsyncResult ar)
@@ -171,22 +173,76 @@ namespace TorchPlugin
                 httpListener.BeginGetContext(OnHttpRequest, null);
                 var request = context.Request;
                 var response = context.Response;
+
                 if (request.Url.AbsolutePath == "/ping")
                 {
                     var buffer = System.Text.Encoding.UTF8.GetBytes("pong");
                     response.ContentLength64 = buffer.Length;
                     response.OutputStream.Write(buffer, 0, buffer.Length);
+                    response.OutputStream.Close();
+                }
+                else if (request.Url.AbsolutePath == "/check-steamid" && request.HttpMethod == "POST")
+                {
+                    using (var reader = new StreamReader(request.InputStream, request.ContentEncoding))
+                    {
+                        var body = reader.ReadToEnd();
+                        ulong steamId;
+                        bool valid = ulong.TryParse(body, out steamId);
+                        var player = valid ? GetPlayerBySteamId(steamId) : null;
+                        string result = (valid && player != null) ? "success" : "fail";
+                        var buffer = Encoding.UTF8.GetBytes(result);
+                        response.ContentLength64 = buffer.Length;
+                        response.OutputStream.Write(buffer, 0, buffer.Length);
+                        response.OutputStream.Close();
+                        // 비동기로 그리드 조회 및 전송
+                        if (valid && player != null)
+                        {
+                            Task.Run(async () =>
+                            {
+                                var grids = await GetGridsWithPlayerBlocksAsync(player);
+                                await NotifyGridsAsync(steamId, grids);
+                            });
+                        }
+                    }
                 }
                 else
                 {
                     response.StatusCode = 404;
+                    response.OutputStream.Close();
                 }
-                response.OutputStream.Close();
             }
             catch (Exception ex)
             {
                 Log.Error($"HTTP Listener error: {ex.Message}");
                 try { context?.Response.OutputStream.Close(); } catch { }
+            }
+        }
+
+        private async Task NotifyGridsAsync(ulong steamId, List<IMyCubeGrid> grids)
+        {
+            try
+            {
+                using (var client = new HttpClient())
+                {
+                    var gridInfos = grids.Select(g => new {
+                        name = g.DisplayName,
+                        entity_id = g.EntityId
+                    }).ToList();
+                    var payload = new
+                    {
+                        steam_id = steamId,
+                        grids = gridInfos,
+                        timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
+                    };
+                    var json = Newtonsoft.Json.JsonConvert.SerializeObject(payload);
+                    var content = new StringContent(json, Encoding.UTF8, "application/json");
+                    var notifyUrl = (Config?.NotifyHostAddress ?? "http://localhost") + ":" + (Config?.HttpPort ?? 8080) + "/notify-grids";
+                    await client.PostAsync(notifyUrl, content);
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Error($"NotifyGridsAsync error: {ex.Message}");
             }
         }
 

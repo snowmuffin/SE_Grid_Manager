@@ -23,6 +23,7 @@
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
             <!-- TODO: Add row definitions if you start using new rows -->
         </Grid.RowDefinitions>
 
@@ -46,7 +47,10 @@
         <TextBlock Grid.Row="4" Grid.Column="0" Text="HTTP Listener Port" VerticalAlignment="Center" Margin="5" />
         <TextBox Grid.Row="4" Grid.Column="1" Grid.ColumnSpan="2" Name="HttpPort" Text="{Binding HttpPort}" Margin="5" />
 
-        <Button Grid.Row="5" Grid.Column="1" Grid.ColumnSpan="2" Content="설정 저장" Margin="5" Click="SaveButton_OnClick" />
+        <TextBlock Grid.Row="5" Grid.Column="0" Text="Notify Host Address" VerticalAlignment="Center" Margin="5" />
+        <TextBox Grid.Row="5" Grid.Column="1" Grid.ColumnSpan="2" Name="NotifyHostAddress" Text="{Binding NotifyHostAddress}" Margin="5" />
+
+        <Button Grid.Row="6" Grid.Column="1" Grid.ColumnSpan="2" Content="설정 저장" Margin="5" Click="SaveButton_OnClick" />
 
         <!-- TODO: Add UI for your configuration properties, examples:
 
