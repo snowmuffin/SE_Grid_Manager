@@ -1,0 +1,7 @@
+<?xml version="1.0"?>
+<PluginManifest xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <Name>Gridmanager</Name>
+  <Guid>0ceed4e4-77c7-43d9-8c0d-d07085ebcc84</Guid>
+  <Repository>Gridmanager</Repository>
+  <Version>v1.0.0</Version>
+</PluginManifest>

@@ -1,0 +1,12 @@
+<Project>
+  <PropertyGroup>
+    <!-- Folder containing SpaceEngineers.exe -->
+    <Bin64>E:\SteamLibrary\steamapps\common\SpaceEngineers\Bin64</Bin64>
+
+    <!-- Folder containing SpaceEngineersDedicated.exe -->
+    <Dedicated64>E:\SteamLibrary\steamapps\common\SpaceEngineersDedicatedServer\DedicatedServer64</Dedicated64>
+
+    <!-- Folder containing Torch.Server.exe -->
+    <Torch>E:\SE_Plugin\SE_Test_Server\torch-server</Torch>
+  </PropertyGroup>
+</Project>
