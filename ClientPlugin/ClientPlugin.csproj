@@ -76,6 +76,9 @@
       <HintPath>$(Bin64)\netstandard.dll</HintPath>
       <Private>False</Private>
     </Reference>
+    <Reference Include="Newtonsoft.Json">
+      <HintPath>..\..\SE_Test_Server\torch-server\DedicatedServer64\Newtonsoft.Json.dll</HintPath>
+    </Reference>
     <Reference Include="NLog, Version=4.0.0.0, Culture=neutral, PublicKeyToken=5120e14c03d0593c">
       <HintPath>$(Bin64)\NLog.dll</HintPath>
       <Private>False</Private>
@@ -644,6 +647,17 @@
     <Compile Include="Settings\ConfigStorage.cs" />
     <Compile Include="Settings\Tools\Binding.cs" />
     <Compile Include="Settings\Tools\Tools.cs" />
+    <Compile Include="GridList\Elements\Button.cs" />
+    <Compile Include="GridList\Elements\Dropdown.cs" />
+    <Compile Include="GridList\Elements\Element.cs" />
+    <Compile Include="GridList\Elements\Keybind.cs" />
+    <Compile Include="GridList\Elements\Slider.cs" />
+    <Compile Include="GridList\Elements\Textbox.cs" />
+    <Compile Include="GridList\Elements\Control.cs" />
+    <Compile Include="GridList\Elements\Color.cs" />
+    <Compile Include="GridList\Elements\Checkbox.cs" />
+    <Compile Include="GridList\GridListScreen.cs" />
+    <Compile Include="GridList\GridDetailScreen.cs" />
     <Compile Include="Config.cs" />
     <Compile Include="Plugin.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />

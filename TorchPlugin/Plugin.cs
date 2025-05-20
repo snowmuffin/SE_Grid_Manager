@@ -59,6 +59,8 @@ namespace TorchPlugin
         private System.Net.HttpListener httpListener;
         private string ListenerPrefix => $"http://localhost:{Config?.HttpPort ?? 8080}/";
 
+        private const ushort MSG_ID_GET_BLOCKS = 42424;
+
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
         public override void Init(ITorchBase torch)
         {
@@ -69,6 +71,8 @@ namespace TorchPlugin
             sessionManager.SessionStateChanged += SessionStateChanged;
 
             initialized = true;
+
+
 
             // Start HTTP listener if enabled
             if (Config != null && Config.EnableHttpListener)
@@ -268,6 +272,65 @@ namespace TorchPlugin
                         }
                     }
                 }
+                else if (request.Url.AbsolutePath == "/get-blocks" && request.HttpMethod == "POST")
+                {
+                    using (var reader = new StreamReader(request.InputStream, request.ContentEncoding))
+                    {
+                        var body = reader.ReadToEnd();
+                        Log.Info($"[HTTP] /get-blocks body: {body}");
+                        long gridId = 0;
+                        ulong steamId = 0;
+                        try
+                        {
+                            var obj = JObject.Parse(body);
+                            JToken gridToken = null, steamToken = null;
+                            if (obj.TryGetValue("grid_id", out gridToken))
+                                long.TryParse(gridToken.ToString(), out gridId);
+                            if (obj.TryGetValue("steam_id", out steamToken))
+                                ulong.TryParse(steamToken.ToString(), out steamId);
+                        }
+                        catch (Exception ex)
+                        {
+                            Log.Error($"[HTTP] /get-blocks JSON parse error: {ex.Message}");
+                        }
+                        Log.Info($"[HTTP] Parsed gridId: {gridId}, steamId: {steamId}");
+                        var entity = MyAPIGateway.Entities.GetEntityById(gridId) as IMyCubeGrid;
+                        var resultDict = new Dictionary<string, int>();
+                        ulong mainOwnerSteamId = 0;
+                        if (entity != null)
+                        {
+                            // 주 소유자
+                            var bigOwner = entity.BigOwners.FirstOrDefault();
+                            mainOwnerSteamId = MyAPIGateway.Players.TryGetSteamId(bigOwner);
+                            // 블럭 집계
+                            var blocks = new List<IMySlimBlock>();
+                            entity.GetBlocks(blocks);
+                            foreach (var block in blocks)
+                            {
+                                if (block.OwnerId == 0) continue;
+                                var blockSteamId = MyAPIGateway.Players.TryGetSteamId(block.OwnerId);
+                                if (blockSteamId == steamId)
+                                {
+                                    var name = block.FatBlock?.DisplayNameText ?? block.BlockDefinition.ToString();
+                                    if (!resultDict.ContainsKey(name))
+                                        resultDict[name] = 0;
+                                    resultDict[name]++;
+                                }
+                            }
+                        }
+                        var responseObj = new
+                        {
+                            main_owner_steam_id = mainOwnerSteamId,
+                            blocks = resultDict
+                        };
+                        var json = JsonConvert.SerializeObject(responseObj);
+                        var buffer = Encoding.UTF8.GetBytes(json);
+                        response.ContentType = "application/json";
+                        response.ContentLength64 = buffer.Length;
+                        response.OutputStream.Write(buffer, 0, buffer.Length);
+                        response.OutputStream.Close();
+                    }
+                }
                 else
                 {
                     response.StatusCode = 404;
@@ -278,6 +341,56 @@ namespace TorchPlugin
             {
                 Log.Error($"HTTP Listener error: {ex.Message}");
                 try { context?.Response.OutputStream.Close(); } catch { }
+            }
+        }
+
+        private void OnGetBlocksMessage(ushort handlerId, byte[] data, ulong sender, bool fromServer)
+        {
+            Log.Info($"[ModAPI] OnGetBlocksMessage received: handlerId={handlerId}, sender={sender}, fromServer={fromServer}, dataLength={data?.Length}");
+            try
+            {
+                // 클라이언트가 보낸 요청 파싱
+                var json = Encoding.UTF8.GetString(data);
+                var obj = JObject.Parse(json);
+                long gridId = obj["grid_id"]?.ToObject<long>() ?? 0;
+                ulong steamId = obj["steam_id"]?.ToObject<ulong>() ?? 0;
+                Log.Info($"[ModAPI] Received get-blocks: gridId={gridId}, steamId={steamId}, sender={sender}");
+
+                var entity = MyAPIGateway.Entities.GetEntityById(gridId) as IMyCubeGrid;
+                var resultDict = new Dictionary<string, int>();
+                ulong mainOwnerSteamId = 0;
+                if (entity != null)
+                {
+                    var bigOwner = entity.BigOwners.FirstOrDefault();
+                    mainOwnerSteamId = MyAPIGateway.Players.TryGetSteamId(bigOwner);
+                    var blocks = new List<IMySlimBlock>();
+                    entity.GetBlocks(blocks);
+                    foreach (var block in blocks)
+                    {
+                        if (block.OwnerId == 0) continue;
+                        var blockSteamId = MyAPIGateway.Players.TryGetSteamId(block.OwnerId);
+                        if (blockSteamId == steamId)
+                        {
+                            var name = block.FatBlock?.DisplayNameText ?? block.BlockDefinition.ToString();
+                            if (!resultDict.ContainsKey(name))
+                                resultDict[name] = 0;
+                            resultDict[name]++;
+                        }
+                    }
+                }
+                var responseObj = new
+                {
+                    main_owner_steam_id = mainOwnerSteamId,
+                    blocks = resultDict
+                };
+                var responseJson = JsonConvert.SerializeObject(responseObj);
+                var responseBytes = Encoding.UTF8.GetBytes(responseJson);
+                // 클라이언트에게 응답 전송 (반드시 sender로!)
+                Sandbox.ModAPI.MyAPIGateway.Multiplayer.SendMessageTo(MSG_ID_GET_BLOCKS, responseBytes, sender);
+            }
+            catch (Exception ex)
+            {
+                Log.Error($"[ModAPI] get-blocks handler error: {ex.Message}");
             }
         }
 
@@ -330,7 +443,7 @@ namespace TorchPlugin
                     break;
 
                 case TorchSessionState.Loaded:
-
+                    Sandbox.ModAPI.MyAPIGateway.Multiplayer.RegisterSecureMessageHandler(MSG_ID_GET_BLOCKS, OnGetBlocksMessage);
                     break;
 
                 case TorchSessionState.Unloading:
