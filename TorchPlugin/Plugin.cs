@@ -12,9 +12,11 @@ using System.Threading.Tasks;
 using System.Windows.Controls;
 using HarmonyLib;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using Sandbox.Game;
 using Sandbox.Game.Entities;
 using Sandbox.Game.Entities.Character;
+using Sandbox.Game.World;
 using Sandbox.ModAPI;
 using Shared.Config;
 using Shared.Logging;
@@ -36,7 +38,8 @@ namespace TorchPlugin
 {
     public sealed class Plugin : TorchPluginBase, IWpfPlugin
     {
-        public const string PluginName = "Se_web";
+        public const string PluginName = "SE_Grid_Manager";
+        public const string PluginVersion = "1.0.0";
         public static Plugin Instance { get; private set; }
         public long Tick { get; private set; }
 
@@ -72,6 +75,7 @@ namespace TorchPlugin
             {
                 try
                 {
+                    Log.Info($"[HTTP] ListenerPrefix: {ListenerPrefix}");
                     httpListener = new System.Net.HttpListener();
                     httpListener.Prefixes.Add(ListenerPrefix);
                     httpListener.Start();
@@ -80,7 +84,8 @@ namespace TorchPlugin
                 }
                 catch (Exception ex)
                 {
-                    Log.Error($"Failed to start HTTP Listener: {ex.Message}");
+                    Log.Error($"Failed to start HTTP Listener at {ListenerPrefix}: {ex.Message}");
+                    Log.Error($"[HTTP] Config.HttpPort: {Config?.HttpPort}, EnableHttpListener: {Config?.EnableHttpListener}");
                 }
             }
         }
@@ -133,16 +138,45 @@ namespace TorchPlugin
 
         public IMyPlayer GetPlayerBySteamId(ulong steamId)
         {
+            var identities = MySession.Static.Players.GetAllIdentities();
+            long foundIdentityId = 0;
+            string foundDisplayName = null;
+            foreach (var identity in identities)
+            {
+                if (identity == null) continue;
+                ulong id = MyAPIGateway.Players.TryGetSteamId(identity.IdentityId);
+                if (id == steamId)
+                {
+                    foundIdentityId = identity.IdentityId;
+                    foundDisplayName = identity.DisplayName;
+                    break;
+                }
+            }
+            if (foundIdentityId == 0)
+            {
+                Log.Info($"[PlayerList] No identity found for SteamId: {steamId}");
+                return null;
+            }
+            Log.Info($"[PlayerList] Found identity: {foundDisplayName}, SteamId: {steamId}, IdentityId: {foundIdentityId}");
             var players = new List<IMyPlayer>();
             MyAPIGateway.Players.GetPlayers(players);
-            return players.FirstOrDefault(p => p.SteamUserId == steamId);
+            var player = players.FirstOrDefault(p => p.IdentityId == foundIdentityId);
+            if (player == null)
+            {
+                Log.Info($"[PlayerList] No IMyPlayer found for IdentityId: {foundIdentityId}");
+            }
+            else
+            {
+                Log.Info($"[PlayerList] Found IMyPlayer: {player.DisplayName}, SteamUserId: {player.SteamUserId}, IdentityId: {player.IdentityId}");
+            }
+            return player;
         }
 
-        public async Task<List<IMyCubeGrid>> GetGridsWithPlayerBlocksAsync(IMyPlayer player)
+        public async Task<List<IMyCubeGrid>> GetGridsWithPlayerBlocksAsync(long identityId)
         {
             return await Task.Run(() => {
                 var result = new List<IMyCubeGrid>();
-                if (player == null)
+                if (identityId == 0)
                     return result;
 
                 var entities = new HashSet<IMyEntity>();
@@ -153,10 +187,15 @@ namespace TorchPlugin
                     if (cubeGrid == null) continue;
                     var blocks = new List<IMySlimBlock>();
                     cubeGrid.GetBlocks(blocks);
-                    if (blocks.Any(b => b.OwnerId == player.IdentityId))
+                    if (blocks.Any(b => b.OwnerId == identityId))
                     {
                         result.Add(cubeGrid);
                     }
+                }
+                Log.Info($"[GridList] Found {result.Count} grids for IdentityId: {identityId}");
+                foreach (var grid in result)
+                {
+                    Log.Info($"[Grid] Name: {grid.DisplayName}, EntityId: {grid.EntityId}");
                 }
                 return result;
             });
@@ -186,20 +225,44 @@ namespace TorchPlugin
                     using (var reader = new StreamReader(request.InputStream, request.ContentEncoding))
                     {
                         var body = reader.ReadToEnd();
-                        ulong steamId;
-                        bool valid = ulong.TryParse(body, out steamId);
-                        var player = valid ? GetPlayerBySteamId(steamId) : null;
-                        string result = (valid && player != null) ? "success" : "fail";
+                        Log.Info($"[HTTP] /Update-Grid body: {body}");
+                        ulong steamId = 0;
+                        bool valid = false;
+                        try
+                        {
+                            // JSON 파싱 시도
+                            if (body.Trim().StartsWith("{"))
+                            {
+                                var obj = Newtonsoft.Json.Linq.JObject.Parse(body);
+                                JToken idToken = null;
+                                if (obj.TryGetValue("steamId", out idToken) || obj.TryGetValue("steam_id", out idToken))
+                                {
+                                    valid = ulong.TryParse(idToken.ToString(), out steamId);
+                                }
+                            }
+                            else
+                            {
+                                valid = ulong.TryParse(body, out steamId);
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            Log.Error($"[HTTP] JSON parse error: {ex.Message}");
+                        }
+                        Log.Info($"[HTTP] Parsed steamId: {steamId}, valid: {valid}");
+                        var identityId = valid ? MyAPIGateway.Players.TryGetIdentityId(steamId) : 0;
+                        Log.Info($"[HTTP] IdentityId found: {identityId}");
+                        string result = (valid && identityId != 0) ? "success" : "fail";
                         var buffer = Encoding.UTF8.GetBytes(result);
                         response.ContentLength64 = buffer.Length;
                         response.OutputStream.Write(buffer, 0, buffer.Length);
                         response.OutputStream.Close();
                         // 비동기로 그리드 조회 및 전송
-                        if (valid && player != null)
+                        if (valid && identityId != 0)
                         {
                             Task.Run(async () =>
                             {
-                                var grids = await GetGridsWithPlayerBlocksAsync(player);
+                                var grids = await GetGridsWithPlayerBlocksAsync(identityId);
                                 await NotifyGridsAsync(steamId, grids);
                             });
                         }
