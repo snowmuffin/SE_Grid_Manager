@@ -39,20 +39,26 @@ namespace ClientPlugin
         private const ushort MSG_ID_GET_BLOCKS = 42424;
         private TaskCompletionSource<string> _blockListTcs;
 
-
+        [System.Runtime.InteropServices.DllImport("kernel32.dll")]
+        private static extern bool AllocConsole();
 
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
         public void Init(object gameInstance)
         {
+            AllocConsole();
+            var stdOut = Console.OpenStandardOutput();
+            var writer = new StreamWriter(stdOut) { AutoFlush = true };
+            Console.SetOut(writer);
+            Console.WriteLine("=== GridManager Plugin Console Initialized ===");
 #if DEBUG
             // Allow the debugger some time to connect once the plugin assembly is loaded
             Thread.Sleep(100);
 #endif
-
             Instance = this;
             Instance.settingsGenerator = new SettingsGenerator();
 
-            Log.Info("Loading");
+            Console.WriteLine("Loading");
+            Console.WriteLine("[Init] Loading");
 
             var configPath = Path.Combine(MyFileSystem.UserDataPath, ConfigFileName);
             config = PersistentConfig<PluginConfig>.Load(Log, configPath);
@@ -67,34 +73,39 @@ namespace ClientPlugin
                 return;
             }
 
-            Log.Debug("Successfully loaded");
+            Console.WriteLine("Successfully loaded");
         }
 
         public void Dispose()
         {
             try
             {
+                Console.WriteLine("[Dispose] Called");
                 // TODO: Save state and close resources here, called when the game exists (not guaranteed!)
                 // IMPORTANT: Do NOT call harmony.UnpatchAll() here! It may break other plugins.
             }
             catch (Exception ex)
             {
-                Log.Critical(ex, "Dispose failed");
+                Console.WriteLine($"Dispose failed: {ex}");
             }
-
+            Console.WriteLine("[Dispose] Instance set to null");
             Instance = null;
         }
 
         public void Update()
         {
             if (failed)
+            {
+                Console.WriteLine("[Update] failed flag is set, skipping update.");
                 return;
+            }
             try
             {
                 if (Sandbox.ModAPI.MyAPIGateway.Input != null &&
                     Sandbox.ModAPI.MyAPIGateway.Input.IsKeyPress(VRage.Input.MyKeys.LeftControl) &&
                     Sandbox.ModAPI.MyAPIGateway.Input.IsNewKeyPressed(VRage.Input.MyKeys.G))
                 {
+                    Console.WriteLine("[Update] Ctrl+G pressed, opening grid list UI.");
                     var player = Sandbox.Game.World.MySession.Static.LocalHumanPlayer;
                     var expanded = new Dictionary<long, bool>();
                     var controls = GenerateGridControls(player, expanded);
@@ -127,7 +138,7 @@ namespace ClientPlugin
             }
             catch (Exception ex)
             {
-                Log.Critical(ex, "Update failed");
+                Console.WriteLine($"[Update] {ex}");
                 Sandbox.ModAPI.MyAPIGateway.Utilities.ShowMessage("GridManager", $"Update failed: {ex.Message}");
                 failed = true;
             }
@@ -135,6 +146,7 @@ namespace ClientPlugin
 
         private List<Sandbox.Graphics.GUI.MyGuiControlBase> GenerateGridControls(Sandbox.Game.World.MyPlayer player, Dictionary<long, bool> expanded)
         {
+            Console.WriteLine("[GenerateGridControls] called");
             var controls = new List<Sandbox.Graphics.GUI.MyGuiControlBase>();
             if (player != null && player.Grids != null)
             {
@@ -149,6 +161,7 @@ namespace ClientPlugin
                     btn.UserData = gridId;
                     btn.ButtonClicked += async (b) => {
                         long id = (long)((Sandbox.Graphics.GUI.MyGuiControlButton)b).UserData;
+                        Console.WriteLine($"[ButtonClicked] GridId: {id}, GridName: {gridName}");
                         var loadingScreen = new ClientPlugin.GridList.GridDetailScreen(
                             $"Grid Detail: {gridName}",
                             () => new List<Sandbox.Graphics.GUI.MyGuiControlBase> {
@@ -156,24 +169,35 @@ namespace ClientPlugin
                             }
                         );
                         Sandbox.Graphics.GUI.MyGuiSandbox.AddScreen(loadingScreen);
-
-                        var blockList = await RequestBlockListFromServerAsync(id);
-                        var blocksText = blockList != null && blockList.Count > 0
-                            ? string.Join("\n", blockList)
-                            : "No blocks found.";
-                        var detailScreen = new ClientPlugin.GridList.GridDetailScreen(
-                            $"Grid Detail: {gridName}",
-                            () => new List<Sandbox.Graphics.GUI.MyGuiControlBase> {
-                                new Sandbox.Graphics.GUI.MyGuiControlLabel(text: blocksText)
-                            }
-                        );
-                        Sandbox.Graphics.GUI.MyGuiSandbox.AddScreen(detailScreen);
+                        try
+                        {
+                            Console.WriteLine($"[ButtonClicked] Awaiting block list from server for gridId={id}");
+                            var blockList = await RequestBlockListFromServerAsync(id);
+                            Console.WriteLine($"[ButtonClicked] blockList received: {(blockList == null ? "null" : string.Join(",", blockList))}");
+                            var blocksText = blockList != null && blockList.Count > 0
+                                ? string.Join("\n", blockList)
+                                : "No blocks found.";
+                            Console.WriteLine($"[ButtonClicked] blocksText: {blocksText}");
+                            var detailScreen = new ClientPlugin.GridList.GridDetailScreen(
+                                $"Grid Detail: {gridName}",
+                                () => new List<Sandbox.Graphics.GUI.MyGuiControlBase> {
+                                    new Sandbox.Graphics.GUI.MyGuiControlLabel(text: blocksText)
+                                }
+                            );
+                            Console.WriteLine($"[ButtonClicked] Showing detailScreen for gridId={id}");
+                            Sandbox.Graphics.GUI.MyGuiSandbox.AddScreen(detailScreen);
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine($"[ButtonClicked] Exception: {ex}");
+                        }
                     };
                     controls.Add(btn);
                 }
             }
             else
             {
+                Console.WriteLine("[GenerateGridControls] No grids found for player.");
                 controls.Add(new Sandbox.Graphics.GUI.MyGuiControlLabel(text: "No grids found."));
             }
             return controls;
@@ -188,15 +212,28 @@ namespace ClientPlugin
             var result = new List<string>();
             _blockListTcs = new TaskCompletionSource<string>();
 
-
             Sandbox.ModAPI.MyAPIGateway.Multiplayer.RegisterSecureMessageHandler(MSG_ID_GET_BLOCKS, OnGetBlocksResponse);
             try
             {
-                Sandbox.ModAPI.MyAPIGateway.Multiplayer.SendMessageToServer(MSG_ID_GET_BLOCKS, reqBytes);
+                Console.WriteLine($"[Client] Preparing to send block list request:");
+                Console.WriteLine($"  gridId: {gridId}");
+                Console.WriteLine($"  steamId: {steamId}");
+                Console.WriteLine($"  reqJson: {reqJson}");
+                Console.WriteLine($"  reqBytes.Length: {reqBytes.Length}");
+                Sandbox.ModAPI.MyAPIGateway.Utilities.ShowMessage("GridManager", $"[Send] gridId={gridId}, steamId={steamId}, bytes={reqBytes.Length}");
+                bool sent = Sandbox.ModAPI.MyAPIGateway.Multiplayer.SendMessageToServer(MSG_ID_GET_BLOCKS, reqBytes);
+                Console.WriteLine($"[Client] SendMessageToServer returned: {sent}");
+                Sandbox.ModAPI.MyAPIGateway.Utilities.ShowMessage("GridManager", $"SendMessageToServer returned: {sent}");
+                if (!sent)
+                {
+                    Console.WriteLine("[Client] SendMessageToServer failed to send message!");
+                    Sandbox.ModAPI.MyAPIGateway.Utilities.ShowMessage("GridManager", "SendMessageToServer failed to send message!");
+                }
             }
             catch (Exception ex)
             {
                 var msg = $"Failed to send mod message: {ex.Message}";
+                Console.WriteLine(msg);
                 Sandbox.ModAPI.MyAPIGateway.Utilities.ShowMessage("GridManager", msg);
                 result.Add(msg);
                 return result;
@@ -236,6 +273,7 @@ namespace ClientPlugin
                 }
                 catch (Exception ex)
                 {
+                    Console.WriteLine($"Error parsing server response: {ex.Message}");
                     result.Add($"Error parsing server response: {ex.Message}");
                 }
             }
@@ -247,10 +285,12 @@ namespace ClientPlugin
             try
             {
                 var json = System.Text.Encoding.UTF8.GetString(data);
+                Console.WriteLine($"[OnGetBlocksResponse] Received data from server. Length: {data?.Length}");
                 _blockListTcs?.TrySetResult(json);
             }
             catch (Exception ex)
             {
+                Console.WriteLine($"Failed to process mod message: {ex.Message}");
                 Sandbox.ModAPI.MyAPIGateway.Utilities.ShowMessage("GridManager", $"Failed to process mod message: {ex.Message}");
             }
         }
