@@ -29,13 +29,16 @@ namespace ClientPlugin
         private static readonly IPluginLogger Logger = new PluginLogger(Name);
         private static readonly string ConfigFileName = $"{Name}.cfg";
         private const ushort MSG_ID_GET_BLOCKS = 42424;
+        private const ushort MSG_ID_GET_GRIDS = 42425;
         private static bool failed;
 
         private SettingsGenerator settingsGenerator;
         private PersistentConfig<PluginConfig> config;
         private TaskCompletionSource<string> _blockListTcs;
-        private bool _isBlockListHandlerRegistered;
+        private bool _isBlockListHandlerRegistered = false;
         private bool _initialized = false;
+        private TaskCompletionSource<string> _gridListTcs;
+        private bool _isGridListHandlerRegistered  = false;
 
         public long Tick { get; private set; }
         public IPluginLogger Log => Logger;
@@ -87,10 +90,14 @@ namespace ClientPlugin
                 // IMPORTANT: Do NOT call harmony.UnpatchAll() here! It may break other plugins.
                 if (_isBlockListHandlerRegistered)
                 {
-                    Sandbox.ModAPI.MyAPIGateway.Multiplayer.UnregisterSecureMessageHandler(MSG_ID_GET_BLOCKS, OnGetBlocksResponse);
+                    Sandbox.ModAPI.MyAPIGateway.Multiplayer.UnregisterSecureMessageHandler(MSG_ID_GET_GRIDS, OnGetBlocksResponse);
                     _isBlockListHandlerRegistered = false;
                 }
-
+                if (_isGridListHandlerRegistered)
+                {
+                    Sandbox.ModAPI.MyAPIGateway.Multiplayer.UnregisterSecureMessageHandler(MSG_ID_GET_GRIDS, OnGetGridsResponse);
+                    _isGridListHandlerRegistered = false;
+                }
             }
             catch (Exception ex)
             {
@@ -100,7 +107,7 @@ namespace ClientPlugin
             Instance = null;
         }
 
-        public void Update()
+        public async void Update()
         {
             if (failed)
             {
@@ -114,10 +121,7 @@ namespace ClientPlugin
                     Sandbox.ModAPI.MyAPIGateway.Input.IsNewKeyPressed(VRage.Input.MyKeys.G))
                 {
                     Console.WriteLine("[Update] Ctrl+G pressed, opening grid list UI.");
-                    var player = MySession.Static.LocalHumanPlayer;
-                    var expanded = new Dictionary<long, bool>();
-                    var controls = GenerateGridControls(player, expanded);
-
+                    var controls = await GenerateGridControlsAsync();
                     var parent = new MyGuiControlParent();
                     float y = 0f;
                     foreach (var c in controls)
@@ -152,19 +156,29 @@ namespace ClientPlugin
             }
         }
 
-        private List<MyGuiControlBase> GenerateGridControls(MyPlayer player, Dictionary<long, bool> expanded)
+        private async Task<List<MyGuiControlBase>> GenerateGridControlsAsync()
         {
-            Console.WriteLine("[GenerateGridControls] called");
+            Console.WriteLine("[GenerateGridControlsAsync] called");
             var controls = new List<MyGuiControlBase>();
-            if (player != null && player.Grids != null)
+            var gridList = await RequestGridListFromServerAsync();
+            if (gridList != null && gridList.Count > 0)
             {
-                foreach (var gridId in player.Grids)
+                foreach (var gridInfo in gridList)
                 {
-                    string gridName = $"Grid: {gridId}";
-                    var entity = Sandbox.ModAPI.MyAPIGateway.Entities.GetEntityById(gridId);
-                    var cubeGrid = entity as VRage.Game.ModAPI.IMyCubeGrid;
-                    if (cubeGrid != null && !string.IsNullOrEmpty(cubeGrid.DisplayName))
-                        gridName = cubeGrid.DisplayName;
+                    string gridName = gridInfo;
+                    long gridId = 0;
+
+                    int idx = gridInfo.LastIndexOf("(ID: ");
+                    if (idx >= 0)
+                    {
+                        int endIdx = gridInfo.LastIndexOf(")");
+                        if (endIdx > idx)
+                        {
+                            var idStr = gridInfo.Substring(idx + 5, endIdx - (idx + 5));
+                            long.TryParse(idStr.Trim(), out gridId);
+                            gridName = gridInfo.Substring(0, idx).Trim();
+                        }
+                    }
                     var btn = new MyGuiControlButton(text: new System.Text.StringBuilder(gridName));
                     btn.UserData = gridId;
                     btn.ButtonClicked += async (b) => {
@@ -198,7 +212,7 @@ namespace ClientPlugin
             }
             else
             {
-                Console.WriteLine("[GenerateGridControls] No grids found for player.");
+                Console.WriteLine("[GenerateGridControlsAsync] No grids found for player.");
                 controls.Add(new MyGuiControlLabel(text: "No grids found."));
             }
             return controls;
@@ -242,6 +256,71 @@ namespace ClientPlugin
                 Log.Info($"[GetDisplayNameFromDefinitionIdString] Unexpected format: {defIdString}");
             }
             return $"Unknown Block ({defIdString})";
+        }
+        private async Task<List<string>> RequestGridListFromServerAsync()
+        {
+            var steamId = Sandbox.ModAPI.MyAPIGateway.Multiplayer.MyId;
+            var reqObj = new { steam_id = steamId };
+            var reqJson = Newtonsoft.Json.JsonConvert.SerializeObject(reqObj);
+            var reqBytes = System.Text.Encoding.UTF8.GetBytes(reqJson);
+            var result = new List<string>();
+            _gridListTcs = new TaskCompletionSource<string>();
+
+            if (!_isGridListHandlerRegistered)
+            {
+                Sandbox.ModAPI.MyAPIGateway.Multiplayer.RegisterSecureMessageHandler(MSG_ID_GET_GRIDS, OnGetGridsResponse);
+                _isGridListHandlerRegistered = true;
+            }
+            try
+            {
+                Console.WriteLine($"[Client] Sending grid list request: steamId={steamId}, reqJson={reqJson}");
+                bool sent = Sandbox.ModAPI.MyAPIGateway.Multiplayer.SendMessageToServer(MSG_ID_GET_GRIDS, reqBytes);
+                Console.WriteLine($"[Client] SendMessageToServer returned: {sent}");
+                if (!sent)
+                {
+                    Console.WriteLine("[Client] SendMessageToServer failed to send message!");
+                    result.Add("SendMessageToServer failed to send message!");
+                    return result;
+                }
+            }
+            catch (Exception ex)
+            {
+                var msg = $"Failed to send grid list request: {ex.Message}";
+                Console.WriteLine(msg);
+                result.Add(msg);
+                return result;
+            }
+
+            string responseJson = null;
+            var task = _gridListTcs.Task;
+            if (await Task.WhenAny(task, Task.Delay(5000)) == task)
+                responseJson = task.Result;
+            else
+                result.Add("Timeout waiting for server response.");
+
+            if (responseJson != null)
+            {
+                try
+                {
+                    var obj = Newtonsoft.Json.Linq.JObject.Parse(responseJson);
+                    var grids = obj["grids"] as Newtonsoft.Json.Linq.JArray;
+                    if (grids != null)
+                    {
+                        foreach (var grid in grids)
+                        {
+                            var name = grid["name"]?.ToString() ?? "Unnamed Grid";
+                            var entityId = grid["entity_id"]?.ToString() ?? "?";
+                            result.Add($"{name} (ID: {entityId})");
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Error parsing server response: {ex.Message}");
+                    result.Add($"Error parsing server response: {ex.Message}");
+                }
+            }
+            return result;
         }
         private async Task<List<string>> RequestBlockListFromServerAsync(long gridId)
         {
@@ -317,7 +396,20 @@ namespace ClientPlugin
             }
             return result;
         }
-
+        private void OnGetGridsResponse(ushort handlerId, byte[] data, ulong sender, bool fromServer)
+        {
+            try
+            {
+                var json = System.Text.Encoding.UTF8.GetString(data);
+                Console.WriteLine($"[OnGetGridsResponse] Received data from server. Length: {data?.Length}");
+                _gridListTcs?.TrySetResult(json);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Failed to process mod message: {ex.Message}");
+                Sandbox.ModAPI.MyAPIGateway.Utilities.ShowMessage("GridManager", $"Failed to process mod message: {ex.Message}");
+            }
+        }
         private void OnGetBlocksResponse(ushort handlerId, byte[] data, ulong sender, bool fromServer)
         {
             try

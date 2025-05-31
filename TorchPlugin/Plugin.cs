@@ -62,6 +62,7 @@ namespace TorchPlugin
         private string ListenerPrefix => $"http://localhost:{Config?.HttpPort ?? 8080}/";
 
         private const ushort MSG_ID_GET_BLOCKS = 42424;
+        private const ushort MSG_ID_GET_GRIDS = 42425;
 
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
         public override void Init(ITorchBase torch)
@@ -182,20 +183,22 @@ namespace TorchPlugin
         {
             return await Task.Run(() => {
                 var result = new List<IMyCubeGrid>();
-                if (identityId == 0)
+                if (identityId == 0 || MySession.Static == null)
                     return result;
 
-                var entities = new HashSet<IMyEntity>();
-                MyAPIGateway.Entities.GetEntities(entities, e => e is IMyCubeGrid);
-                foreach (var entity in entities)
+                var identity = MySession.Static.Players.TryGetIdentity(identityId);
+                if (identity == null)
+                    return result;
+
+                foreach (var kv in identity.BlockLimits.BlocksBuiltByGrid)
                 {
-                    var cubeGrid = entity as IMyCubeGrid;
-                    if (cubeGrid == null) continue;
-                    var blocks = new List<IMySlimBlock>();
-                    cubeGrid.GetBlocks(blocks);
-                    if (blocks.Any(b => b.OwnerId == identityId))
+                    if (MyEntities.TryGetEntityById(kv.Key, out MyCubeGrid myCubeGrid, allowClosed: false))
                     {
-                        result.Add(cubeGrid);
+                        var builtBlocks = myCubeGrid?.FindBlocksBuiltByID(identity.IdentityId);
+                        if (builtBlocks != null && builtBlocks.Any())
+                        {
+                            result.Add(myCubeGrid);
+                        }
                     }
                 }
                 Log.Info($"[GridList] Found {result.Count} grids for IdentityId: {identityId}");
@@ -402,6 +405,50 @@ namespace TorchPlugin
             }
         }
 
+        private void OnGetGridsMessage(ushort handlerId, byte[] data, ulong sender, bool fromServer)
+        {
+            Log.Info($"[ModAPI] OnGetGridsMessage received: handlerId={handlerId}, sender={sender}, fromServer={fromServer}, dataLength={data?.Length}");
+            try
+            {
+                var json = Encoding.UTF8.GetString(data);
+                var obj = JObject.Parse(json);
+                ulong steamId = obj["steam_id"]?.ToObject<ulong>() ?? 0;
+                Log.Info($"[ModAPI] Received get-grids: steamId={steamId}, sender={sender}");
+                var identityId = MyAPIGateway.Players.TryGetIdentityId(steamId);
+                var grids = new List<IMyCubeGrid>();
+                if (identityId != 0)
+                {
+                    var allEntities = new HashSet<IMyEntity>();
+                    MyAPIGateway.Entities.GetEntities(allEntities, e => e is IMyCubeGrid);
+                    foreach (var entity in allEntities)
+                    {
+                        var cubeGrid = entity as IMyCubeGrid;
+                        if (cubeGrid == null) continue;
+                        var blocks = new List<IMySlimBlock>();
+                        cubeGrid.GetBlocks(blocks);
+                        if (blocks.Any(b => b.OwnerId == identityId))
+                        {
+                            grids.Add(cubeGrid);
+                        }
+                    }
+                }
+                var gridInfos = grids.Select(g => new {
+                    name = g.DisplayName,
+                    entity_id = g.EntityId
+                }).ToList();
+                var responseObj = new {
+                    grids = gridInfos
+                };
+                var responseJson = JsonConvert.SerializeObject(responseObj);
+                var responseBytes = Encoding.UTF8.GetBytes(responseJson);
+                Sandbox.ModAPI.MyAPIGateway.Multiplayer.SendMessageTo(MSG_ID_GET_GRIDS, responseBytes, sender);
+            }
+            catch (Exception ex)
+            {
+                Log.Error($"[ModAPI] get-grids handler error: {ex.Message}");
+            }
+        }
+
         private async Task NotifyGridsAsync(ulong steamId, List<IMyCubeGrid> grids)
         {
             try
@@ -449,16 +496,14 @@ namespace TorchPlugin
                 case TorchSessionState.Loading:
                     Log.Debug("Loading");
                     break;
-
                 case TorchSessionState.Loaded:
                     Sandbox.ModAPI.MyAPIGateway.Multiplayer.RegisterSecureMessageHandler(MSG_ID_GET_BLOCKS, OnGetBlocksMessage);
+                    Sandbox.ModAPI.MyAPIGateway.Multiplayer.RegisterSecureMessageHandler(MSG_ID_GET_GRIDS, OnGetGridsMessage);
                     break;
-
                 case TorchSessionState.Unloading:
                     Log.Debug("Unloading");
-
+                    Sandbox.ModAPI.MyAPIGateway.Multiplayer.UnregisterSecureMessageHandler(MSG_ID_GET_GRIDS, OnGetGridsMessage);
                     break;
-
                 case TorchSessionState.Unloaded:
                     Log.Debug("Unloaded");
                     break;
