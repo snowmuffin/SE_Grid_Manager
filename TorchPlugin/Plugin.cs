@@ -13,6 +13,7 @@ using System.Windows.Controls;
 using HarmonyLib;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
+using Sandbox.Definitions;
 using Sandbox.Game;
 using Sandbox.Game.Entities;
 using Sandbox.Game.Entities.Character;
@@ -28,6 +29,7 @@ using Torch.API.Managers;
 using Torch.API.Plugins;
 using Torch.API.Session;
 using Torch.Session;
+using VRage.Game;
 using VRage.Game.Entity;
 using VRage.Game.ModAPI;
 using VRage.ModAPI;
@@ -371,16 +373,22 @@ namespace TorchPlugin
                         var blockSteamId = MyAPIGateway.Players.TryGetSteamId(block.OwnerId);
                         if (blockSteamId == steamId)
                         {
-                            var name = block.FatBlock?.DisplayNameText ?? block.BlockDefinition.ToString();
-                            if (!resultDict.ContainsKey(name))
-                                resultDict[name] = 0;
-                            resultDict[name]++;
+                            var def = block.BlockDefinition.ToString();
+                            if (!resultDict.ContainsKey(def))
+                                resultDict[def] = 0;
+                            resultDict[def]++;
                         }
                     }
                 }
+                var mainOwnerplayer = MySession.Static.Players.TryGetPlayerBySteamId(mainOwnerSteamId);
+                string mainOwnerName = null;
+                if (mainOwnerplayer != null)
+                {
+                    mainOwnerName = mainOwnerplayer.DisplayName;
+                }
                 var responseObj = new
                 {
-                    main_owner_steam_id = mainOwnerSteamId,
+                    main_owner_name = mainOwnerName,
                     blocks = resultDict
                 };
                 var responseJson = JsonConvert.SerializeObject(responseObj);

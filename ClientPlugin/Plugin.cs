@@ -1,9 +1,14 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Threading;
+using System.Threading.Tasks;
+using ClientPlugin.GridList;
 using ClientPlugin.Settings;
 using ClientPlugin.Settings.Layouts;
 using HarmonyLib;
+using Sandbox.Definitions;
+using Sandbox.Game.World;
 using Sandbox.Graphics.GUI;
 using Shared.Config;
 using Shared.Logging;
@@ -12,11 +17,7 @@ using Shared.Plugin;
 using VRage.FileSystem;
 using VRage.Game;
 using VRage.Plugins;
-using ClientPlugin.GridList;
-using System.Collections.Generic;
-using Sandbox.Game.World;
 using VRage.Utils;
-using System.Threading.Tasks;
 
 namespace ClientPlugin
 {
@@ -25,19 +26,20 @@ namespace ClientPlugin
     {
         public const string Name = "Gridmanager";
         public static Plugin Instance { get; private set; }
-        private SettingsGenerator settingsGenerator;
-        public long Tick { get; private set; }
-        private static bool failed;
-        private bool _initialized = false;
-
-        public IPluginLogger Log => Logger;
         private static readonly IPluginLogger Logger = new PluginLogger(Name);
-
-        public IPluginConfig Config => config?.Data;
-        private PersistentConfig<PluginConfig> config;
         private static readonly string ConfigFileName = $"{Name}.cfg";
         private const ushort MSG_ID_GET_BLOCKS = 42424;
+        private static bool failed;
+
+        private SettingsGenerator settingsGenerator;
+        private PersistentConfig<PluginConfig> config;
         private TaskCompletionSource<string> _blockListTcs;
+        private bool _isBlockListHandlerRegistered;
+        private bool _initialized = false;
+
+        public long Tick { get; private set; }
+        public IPluginLogger Log => Logger;
+        public IPluginConfig Config => config?.Data;
 
         [System.Runtime.InteropServices.DllImport("kernel32.dll")]
         private static extern bool AllocConsole();
@@ -83,6 +85,12 @@ namespace ClientPlugin
                 Console.WriteLine("[Dispose] Called");
                 // TODO: Save state and close resources here, called when the game exists (not guaranteed!)
                 // IMPORTANT: Do NOT call harmony.UnpatchAll() here! It may break other plugins.
+                if (_isBlockListHandlerRegistered)
+                {
+                    Sandbox.ModAPI.MyAPIGateway.Multiplayer.UnregisterSecureMessageHandler(MSG_ID_GET_BLOCKS, OnGetBlocksResponse);
+                    _isBlockListHandlerRegistered = false;
+                }
+
             }
             catch (Exception ex)
             {
@@ -106,7 +114,7 @@ namespace ClientPlugin
                     Sandbox.ModAPI.MyAPIGateway.Input.IsNewKeyPressed(VRage.Input.MyKeys.G))
                 {
                     Console.WriteLine("[Update] Ctrl+G pressed, opening grid list UI.");
-                    var player = Sandbox.Game.World.MySession.Static.LocalHumanPlayer;
+                    var player = MySession.Static.LocalHumanPlayer;
                     var expanded = new Dictionary<long, bool>();
                     var controls = GenerateGridControls(player, expanded);
 
@@ -127,7 +135,7 @@ namespace ClientPlugin
                     };
                     scroll.ScrollbarVEnabled = true;
 
-                    var screen = new ClientPlugin.GridList.GridListScreen(
+                    var screen = new GridListScreen(
                         "Grid List",
                         () => new List<MyGuiControlBase> { scroll }
                     );
@@ -144,10 +152,10 @@ namespace ClientPlugin
             }
         }
 
-        private List<Sandbox.Graphics.GUI.MyGuiControlBase> GenerateGridControls(Sandbox.Game.World.MyPlayer player, Dictionary<long, bool> expanded)
+        private List<MyGuiControlBase> GenerateGridControls(MyPlayer player, Dictionary<long, bool> expanded)
         {
             Console.WriteLine("[GenerateGridControls] called");
-            var controls = new List<Sandbox.Graphics.GUI.MyGuiControlBase>();
+            var controls = new List<MyGuiControlBase>();
             if (player != null && player.Grids != null)
             {
                 foreach (var gridId in player.Grids)
@@ -157,18 +165,11 @@ namespace ClientPlugin
                     var cubeGrid = entity as VRage.Game.ModAPI.IMyCubeGrid;
                     if (cubeGrid != null && !string.IsNullOrEmpty(cubeGrid.DisplayName))
                         gridName = cubeGrid.DisplayName;
-                    var btn = new Sandbox.Graphics.GUI.MyGuiControlButton(text: new System.Text.StringBuilder(gridName));
+                    var btn = new MyGuiControlButton(text: new System.Text.StringBuilder(gridName));
                     btn.UserData = gridId;
                     btn.ButtonClicked += async (b) => {
-                        long id = (long)((Sandbox.Graphics.GUI.MyGuiControlButton)b).UserData;
+                        long id = (long)((MyGuiControlButton)b).UserData;
                         Console.WriteLine($"[ButtonClicked] GridId: {id}, GridName: {gridName}");
-                        var loadingScreen = new ClientPlugin.GridList.GridDetailScreen(
-                            $"Grid Detail: {gridName}",
-                            () => new List<Sandbox.Graphics.GUI.MyGuiControlBase> {
-                                new Sandbox.Graphics.GUI.MyGuiControlLabel(text: "Loading block list from server...")
-                            }
-                        );
-                        Sandbox.Graphics.GUI.MyGuiSandbox.AddScreen(loadingScreen);
                         try
                         {
                             Console.WriteLine($"[ButtonClicked] Awaiting block list from server for gridId={id}");
@@ -178,14 +179,14 @@ namespace ClientPlugin
                                 ? string.Join("\n", blockList)
                                 : "No blocks found.";
                             Console.WriteLine($"[ButtonClicked] blocksText: {blocksText}");
-                            var detailScreen = new ClientPlugin.GridList.GridDetailScreen(
+                            var detailScreen = new GridDetailScreen(
                                 $"Grid Detail: {gridName}",
-                                () => new List<Sandbox.Graphics.GUI.MyGuiControlBase> {
-                                    new Sandbox.Graphics.GUI.MyGuiControlLabel(text: blocksText)
-                                }
+                                (Func<List<MyGuiControlBase>>)(() => new List<MyGuiControlBase> {
+                                    new MyGuiControlLabel(text: blocksText)
+                                })
                             );
                             Console.WriteLine($"[ButtonClicked] Showing detailScreen for gridId={id}");
-                            Sandbox.Graphics.GUI.MyGuiSandbox.AddScreen(detailScreen);
+                            MyGuiSandbox.AddScreen(detailScreen);
                         }
                         catch (Exception ex)
                         {
@@ -198,12 +199,51 @@ namespace ClientPlugin
             else
             {
                 Console.WriteLine("[GenerateGridControls] No grids found for player.");
-                controls.Add(new Sandbox.Graphics.GUI.MyGuiControlLabel(text: "No grids found."));
+                controls.Add(new MyGuiControlLabel(text: "No grids found."));
             }
             return controls;
         }
+        public string GetDisplayNameFromDefinitionIdString(string defIdString)
+        {
+            if (string.IsNullOrWhiteSpace(defIdString)) return "Invalid Block Definition";
+            string[] parts = null;
+            if (defIdString.Contains("/"))
+                parts = defIdString.Split('/');
+            else if (defIdString.Contains(" "))
+                parts = defIdString.Split(' ');
+            else if (defIdString.Contains("_"))
+                parts = defIdString.Split('_');
+            else
+                parts = new[] { defIdString };
 
-        private async System.Threading.Tasks.Task<List<string>> RequestBlockListFromServerAsync(long gridId)
+            if (parts.Length == 2)
+            {
+                try
+                {
+                    var type = VRage.ObjectBuilders.MyObjectBuilderType.Parse(parts[0]);
+                    var defId = new MyDefinitionId(type, parts[1]);
+                    var def = MyDefinitionManager.Static.GetDefinition(defId);
+                    if (def == null)
+                    {
+                        Log.Info($"[GetDisplayNameFromDefinitionIdString] Definition not found for: {defIdString}");
+                        return $"Unknown ({defIdString})";
+                    }
+                    if (string.IsNullOrWhiteSpace(def.DisplayNameText))
+                        return defId.ToString();
+                    return def.DisplayNameText;
+                }
+                catch (Exception ex)
+                {
+                    Log.Error($"[GetDisplayNameFromDefinitionIdString] Exception for '{defIdString}': {ex.Message}");
+                }
+            }
+            else
+            {
+                Log.Info($"[GetDisplayNameFromDefinitionIdString] Unexpected format: {defIdString}");
+            }
+            return $"Unknown Block ({defIdString})";
+        }
+        private async Task<List<string>> RequestBlockListFromServerAsync(long gridId)
         {
             var steamId = Sandbox.ModAPI.MyAPIGateway.Multiplayer.MyId;
             var reqObj = new { grid_id = gridId, steam_id = steamId };
@@ -212,7 +252,11 @@ namespace ClientPlugin
             var result = new List<string>();
             _blockListTcs = new TaskCompletionSource<string>();
 
-            Sandbox.ModAPI.MyAPIGateway.Multiplayer.RegisterSecureMessageHandler(MSG_ID_GET_BLOCKS, OnGetBlocksResponse);
+            if (!_isBlockListHandlerRegistered)
+            {
+                Sandbox.ModAPI.MyAPIGateway.Multiplayer.RegisterSecureMessageHandler(MSG_ID_GET_BLOCKS, OnGetBlocksResponse);
+                _isBlockListHandlerRegistered = true;
+            }
             try
             {
                 Console.WriteLine($"[Client] Preparing to send block list request:");
@@ -240,30 +284,24 @@ namespace ClientPlugin
             }
 
             string responseJson = null;
-            try
-            {
-                var task = _blockListTcs.Task;
-                if (await Task.WhenAny(task, Task.Delay(5000)) == task)
-                    responseJson = task.Result;
-                else
-                    result.Add("Timeout waiting for server response.");
-            }
-            finally
-            {
-                Sandbox.ModAPI.MyAPIGateway.Multiplayer.UnregisterSecureMessageHandler(MSG_ID_GET_BLOCKS, OnGetBlocksResponse);
-            }
+            var task = _blockListTcs.Task;
+            if (await Task.WhenAny(task, Task.Delay(5000)) == task)
+                responseJson = task.Result;
+            else
+                result.Add("Timeout waiting for server response.");
+
             if (responseJson != null)
             {
                 try
                 {
                     var obj = Newtonsoft.Json.Linq.JObject.Parse(responseJson);
                     var blocks = obj["blocks"] as Newtonsoft.Json.Linq.JObject;
-                    var mainOwner = obj["main_owner_steam_id"]?.ToString();
+                    var mainOwner = obj["main_owner_name"]?.ToString();
                     if (blocks != null)
                     {
                         foreach (var prop in blocks.Properties())
                         {
-                            result.Add($"{prop.Name}: {prop.Value}");
+                            result.Add($"{GetDisplayNameFromDefinitionIdString(prop.Name)}: {prop.Value}");
                         }
                     }
                     if (!string.IsNullOrEmpty(mainOwner))
