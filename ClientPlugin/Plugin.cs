@@ -30,7 +30,7 @@ namespace ClientPlugin
         private static readonly string ConfigFileName = $"{Name}.cfg";
         private const ushort MSG_ID_GET_BLOCKS = 42424;
         private const ushort MSG_ID_GET_GRIDS = 42425;
-
+        private const ushort MSG_ID_BLOCK_ACTION = 42426;
         private static bool failed;
 
         private SettingsGenerator settingsGenerator;
@@ -39,7 +39,7 @@ namespace ClientPlugin
         private bool _isBlockListHandlerRegistered = false;
         private bool _initialized = false;
         private TaskCompletionSource<string> _gridListTcs;
-
+        private bool _isGridListHandlerRegistered = false;
 
         public long Tick { get; private set; }
         public IPluginLogger Log => Logger;
@@ -122,9 +122,15 @@ namespace ClientPlugin
                 {
                     Console.WriteLine("[Update] Ctrl+G pressed, opening grid list UI.");
                     var controls = await GenerateGridControlsAsync();
-                    var parent = new MyGuiControlParent();
-                    float y = 0f;
-
+                    var sizeX = 0.35f;
+                    var sizeY = 0.6f;
+                    var list = new MyGuiControlList(
+                        position: new VRageMath.Vector2(0f, 0f),
+                        size: new VRageMath.Vector2(sizeX, sizeY),
+                        backgroundColor: null,
+                        toolTip: null,
+                        visualStyle: 0 // Default style
+                    );
                     foreach (var c in controls)
                     {
                         list.Controls.Add(c);
