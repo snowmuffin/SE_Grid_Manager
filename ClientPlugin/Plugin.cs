@@ -38,7 +38,7 @@ namespace ClientPlugin
         private bool _isBlockListHandlerRegistered = false;
         private bool _initialized = false;
         private TaskCompletionSource<string> _gridListTcs;
-        private bool _isGridListHandlerRegistered  = false;
+        private bool _isGridListHandlerRegistered = false;
 
         public long Tick { get; private set; }
         public IPluginLogger Log => Logger;
@@ -86,8 +86,7 @@ namespace ClientPlugin
             try
             {
                 Console.WriteLine("[Dispose] Called");
-                // TODO: Save state and close resources here, called when the game exists (not guaranteed!)
-                // IMPORTANT: Do NOT call harmony.UnpatchAll() here! It may break other plugins.
+
                 if (_isBlockListHandlerRegistered)
                 {
                     Sandbox.ModAPI.MyAPIGateway.Multiplayer.UnregisterSecureMessageHandler(MSG_ID_GET_GRIDS, OnGetBlocksResponse);
@@ -122,26 +121,25 @@ namespace ClientPlugin
                 {
                     Console.WriteLine("[Update] Ctrl+G pressed, opening grid list UI.");
                     var controls = await GenerateGridControlsAsync();
-                    var parent = new MyGuiControlParent();
-                    float y = 0f;
+                    var sizeX = 0.35f;
+                    var sizeY = 0.6f;
+                    var list = new MyGuiControlList(
+                        position: new VRageMath.Vector2(0f, 0f),
+                        size: new VRageMath.Vector2(sizeX, sizeY),
+                        backgroundColor: null,
+                        toolTip: null,
+                        visualStyle: 0 // Default style
+                    );
                     foreach (var c in controls)
                     {
-                        c.Position = new VRageMath.Vector2(0f, y);
-                        parent.Controls.Add(c);
-                        y += c.Size.Y + 0.01f;
+                        list.Controls.Add(c);
                     }
-                    parent.Size = new VRageMath.Vector2(0.4f, Math.Max(0.4f, y));
-                    var scroll = new MyGuiControlScrollablePanel(parent)
-                    {
-                        Position = new VRageMath.Vector2(0f, 0f),
-                        Size = new VRageMath.Vector2(0.45f, 0.6f),
-                        OriginAlign = MyGuiDrawAlignEnum.HORISONTAL_CENTER_AND_VERTICAL_CENTER
-                    };
-                    scroll.ScrollbarVEnabled = true;
-
+                    var labelCount = new MyGuiControlLabel(text: $"Total items: {controls.Count}") { Position = new VRageMath.Vector2(-0.3f, -0.35f) };
                     var screen = new GridListScreen(
                         "Grid List",
-                        () => new List<MyGuiControlBase> { scroll }
+                        () => new List<MyGuiControlBase> {
+                            labelCount, list
+                        }
                     );
                     MyGuiSandbox.AddScreen(screen);
                 }
@@ -181,7 +179,8 @@ namespace ClientPlugin
                     }
                     var btn = new MyGuiControlButton(text: new System.Text.StringBuilder(gridName));
                     btn.UserData = gridId;
-                    btn.ButtonClicked += async (b) => {
+                    btn.ButtonClicked += async (b) =>
+                    {
                         long id = (long)((MyGuiControlButton)b).UserData;
                         Console.WriteLine($"[ButtonClicked] GridId: {id}, GridName: {gridName}");
                         try
