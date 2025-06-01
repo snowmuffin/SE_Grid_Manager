@@ -23,7 +23,7 @@ namespace ClientPlugin.GridList
             ) : base(
                 position ?? new Vector2(0.5f, 0.5f),
                 MyGuiConstants.SCREEN_BACKGROUND_COLOR,
-                size ?? new Vector2(0.6f, 0.8f),
+                size ?? new Vector2(0.3f, 0.42f),
                 false,
                 null,
                 MySandboxGame.Config.UIBkOpacity,
