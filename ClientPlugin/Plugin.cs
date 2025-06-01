@@ -194,7 +194,7 @@ namespace ClientPlugin
                                 : "No blocks found.";
                             // MyGuiControlList로 상세 목록 구현
                             var detailList = new MyGuiControlList(
-                                position: new VRageMath.Vector2(0.5f, 0.5f),
+                                position: new VRageMath.Vector2(0.0f, 0.0f),
                                 size: new VRageMath.Vector2(0.35f, 0.6f),
                                 backgroundColor: null,
                                 toolTip: null,
@@ -226,11 +226,12 @@ namespace ClientPlugin
                             {
                                 detailList.Controls.Add(new MyGuiControlLabel(text: "No blocks found."));
                             }
+
                             var detailScreen = new GridDetailScreen(
                                 $"Grid Detail: {gridName}",
-                                (Func<List<MyGuiControlBase>>)(() => new List<MyGuiControlBase> {
+                                () => new List<MyGuiControlBase> {
                                     detailList
-                                })
+                                }
                             );
                             Console.WriteLine($"[ButtonClicked] Showing detailScreen for gridId={id}");
                             MyGuiSandbox.AddScreen(detailScreen);
