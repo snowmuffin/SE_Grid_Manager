@@ -8,7 +8,7 @@ namespace ClientPlugin.GridList
     public class GridDetailScreen : MyGuiScreenBase
     {
         public GridDetailScreen(string title, Func<List<MyGuiControlBase>> controlsFactory)
-            : base(Vector2.Zero, null, new Vector2(0.5f, 0.7f))
+            : base(new Vector2(0.5f, 0.5f), MyGuiConstants.SCREEN_BACKGROUND_COLOR, new Vector2(0.6f, 0.8f))
         {
             EnabledBackgroundFade = true;
             CanHaveFocus = true;
@@ -22,12 +22,12 @@ namespace ClientPlugin.GridList
             float y = 0.05f;
             var titleLabel = new MyGuiControlLabel(text: title) { Position = new Vector2(0.05f, y) };
             Controls.Add(titleLabel);
-            y += titleLabel.Size.Y + 0.01f;
-            foreach (var c in controls)
+            // 컨트롤이 MyGuiControlList 하나만 있다고 가정하고, 중앙에 배치
+            if (controls.Count > 0)
             {
-                c.Position = new Vector2(0.05f, y);
-                Controls.Add(c);
-                y += c.Size.Y + 0.01f;
+                var list = controls[0];
+                list.Position = new Vector2(0.05f, titleLabel.Position.Y + titleLabel.Size.Y + 0.02f);
+                Controls.Add(list);
             }
         }
 
