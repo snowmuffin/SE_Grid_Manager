@@ -472,15 +472,19 @@ namespace TorchPlugin
                     {
                         if (block.OwnerId == 0) continue;
                         var blockSteamId = MyAPIGateway.Players.TryGetSteamId(block.OwnerId);
-                        var name = block.FatBlock?.DisplayNameText ?? block.BlockDefinition.ToString();
-                        if (blockSteamId == steamId && name == blockName)
+                        var defName = block.BlockDefinition.ToString();
+                        if (blockSteamId == steamId && defName == blockName)
                         {
                             block.CubeGrid.RemoveBlock(block);
                             foundAndDeleted = true;
-                            Log.Info($"[ModAPI] Block deleted: {blockName} by steamId={steamId}");
+                            Log.Info($"[ModAPI] Block deleted: {blockName} by steamId={steamId} (Success)");
                             break;
                         }
                     }
+                }
+                if (!foundAndDeleted)
+                {
+                    Log.Info($"[ModAPI] Block not found or not deleted: {blockName} by steamId={steamId} (Fail)");
                 }
                 var responseObj = new { success = foundAndDeleted };
                 var responseJson = JsonConvert.SerializeObject(responseObj);

@@ -30,7 +30,7 @@ namespace ClientPlugin
         private static readonly string ConfigFileName = $"{Name}.cfg";
         private const ushort MSG_ID_GET_BLOCKS = 42424;
         private const ushort MSG_ID_GET_GRIDS = 42425;
-        private const ushort MSG_ID_BLOCK_ACTION = 42426;
+        private const ushort MSG_ID_BLOCK_DELETE = 42426;
         private static bool failed;
 
         private SettingsGenerator settingsGenerator;
@@ -40,6 +40,8 @@ namespace ClientPlugin
         private bool _initialized = false;
         private TaskCompletionSource<string> _gridListTcs;
         private bool _isGridListHandlerRegistered = false;
+        private bool _isBlockActionHandlerRegistered= false;
+        private readonly System.Collections.Concurrent.ConcurrentDictionary<string, TaskCompletionSource<string>> _blockDeleteTcsDict = new System.Collections.Concurrent.ConcurrentDictionary<string, TaskCompletionSource<string>>();
 
         public long Tick { get; private set; }
         public IPluginLogger Log => Logger;
@@ -79,6 +81,7 @@ namespace ClientPlugin
                 return;
             }
 
+
             Console.WriteLine("Successfully loaded");
         }
 
@@ -98,6 +101,7 @@ namespace ClientPlugin
                     Sandbox.ModAPI.MyAPIGateway.Multiplayer.UnregisterSecureMessageHandler(MSG_ID_GET_GRIDS, OnGetGridsResponse);
                     _isGridListHandlerRegistered = false;
                 }
+                Sandbox.ModAPI.MyAPIGateway.Multiplayer.UnregisterSecureMessageHandler(MSG_ID_BLOCK_DELETE, OnBlockActionResponse);
             }
             catch (Exception ex)
             {
@@ -187,7 +191,7 @@ namespace ClientPlugin
                         try
                         {
                             Console.WriteLine($"[ButtonClicked] Awaiting block list from server for gridId={id}");
-                            var blockList = await RequestBlockListFromServerAsync(id);
+                            var (blockList, mainOwner) = await RequestBlockListFromServerAsync(id);
                             Console.WriteLine($"[ButtonClicked] blockList received: {(blockList == null ? "null" : string.Join(",", blockList))}");
                             var blocksText = blockList != null && blockList.Count > 0
                                 ? string.Join("\n", blockList)
@@ -200,21 +204,25 @@ namespace ClientPlugin
                                 toolTip: null,
                                 visualStyle: 0
                             );
+                            
                             if (blockList != null && blockList.Count > 0)
                             {
                                 foreach (var block in blockList)
                                 {
-                                    // block: "BlockName: SteamId" 형식 가정
+                                    
                                     var label = new MyGuiControlLabel(text: block);
                                     var parts = block.Split(':');
                                     string blockName = parts[0].Trim();
                                     string blockSteamId = parts.Length > 1 ? parts[1].Trim() : "";
-                                    var actionBtn = new MyGuiControlButton(text: new System.Text.StringBuilder("Action"));
-                                    actionBtn.UserData = new Tuple<long, string>(id, blockName); // blockSteamId -> blockName
-                                    actionBtn.ButtonClicked += (btn2) =>
+                                    var actionBtn = new MyGuiControlButton(text: new System.Text.StringBuilder("Delete Block"));
+                                    actionBtn.UserData = new Tuple<long, string>(id, blockName);
+                                    actionBtn.ButtonClicked += async (btn2) =>
                                     {
-                                        var tuple = (Tuple<long, string>)((MyGuiControlButton)btn2).UserData;
-                                        SendBlockActionMessageAsync(tuple.Item1, tuple.Item2); // tuple.Item2는 blockName
+                                        var button = (MyGuiControlButton)btn2;
+                                        button.Enabled = false;
+                                        var tuple = (Tuple<long, string>)button.UserData;
+                                        bool success = await SendBlockActionMessageAsync(tuple.Item1, tuple.Item2);
+
                                     };
                                     label.Position = new VRageMath.Vector2(-0.13f, 0f);
                                     actionBtn.Position = new VRageMath.Vector2(0.12f, 0f);
@@ -228,11 +236,10 @@ namespace ClientPlugin
                             }
 
                             var detailScreen = new GridDetailScreen(
-                                $"Grid Detail: {gridName}",
-                                () => new List<MyGuiControlBase> {
-                                    detailList
-                                }
+                                $"Grid Detail: {gridName}"
                             );
+                            detailScreen.RecreateControlsWithGridId(true, id.ToString()+$"\nMainOwner: ({mainOwner})");
+                            detailScreen.Controls.Add(detailList);
                             Console.WriteLine($"[ButtonClicked] Showing detailScreen for gridId={id}");
                             MyGuiSandbox.AddScreen(detailScreen);
                         }
@@ -242,6 +249,7 @@ namespace ClientPlugin
                         }
                     };
                     controls.Add(btn);
+                    
                 }
             }
             else
@@ -356,7 +364,7 @@ namespace ClientPlugin
             }
             return result;
         }
-        private async Task<List<string>> RequestBlockListFromServerAsync(long gridId)
+        private async Task<(List<string>,string mainOwner)> RequestBlockListFromServerAsync(long gridId)
         {
             var steamId = Sandbox.ModAPI.MyAPIGateway.Multiplayer.MyId;
             var reqObj = new { grid_id = gridId, steam_id = steamId };
@@ -393,9 +401,9 @@ namespace ClientPlugin
                 Console.WriteLine(msg);
                 Sandbox.ModAPI.MyAPIGateway.Utilities.ShowMessage("GridManager", msg);
                 result.Add(msg);
-                return result;
+                return (result, string.Empty);
             }
-
+            var mainOwner = string.Empty;
             string responseJson = null;
             var task = _blockListTcs.Task;
             if (await Task.WhenAny(task, Task.Delay(5000)) == task)
@@ -409,7 +417,7 @@ namespace ClientPlugin
                 {
                     var obj = Newtonsoft.Json.Linq.JObject.Parse(responseJson);
                     var blocks = obj["blocks"] as Newtonsoft.Json.Linq.JObject;
-                    var mainOwner = obj["main_owner_name"]?.ToString();
+                    mainOwner = obj["main_owner_name"]?.ToString();
                     if (blocks != null)
                     {
                         foreach (var prop in blocks.Properties())
@@ -417,10 +425,7 @@ namespace ClientPlugin
                             result.Add($"{prop.Name}: {prop.Value}");
                         }
                     }
-                    if (!string.IsNullOrEmpty(mainOwner))
-                    {
-                        result.Insert(0, $"Main Owner SteamId: {mainOwner}");
-                    }
+
                 }
                 catch (Exception ex)
                 {
@@ -428,7 +433,7 @@ namespace ClientPlugin
                     result.Add($"Error parsing server response: {ex.Message}");
                 }
             }
-            return result;
+            return (result, mainOwner);
         }
         private void OnGetGridsResponse(ushort handlerId, byte[] data, ulong sender, bool fromServer)
         {
@@ -459,30 +464,51 @@ namespace ClientPlugin
             }
         }
 
-        private async void SendBlockActionMessageAsync(long gridId, string blockName)
+        private async Task<bool> SendBlockActionMessageAsync(long gridId, string blockName)
         {
             var steamId = Sandbox.ModAPI.MyAPIGateway.Multiplayer.MyId;
             var reqObj = new { grid_id = gridId, block_name = blockName, steam_id = steamId };
             var reqJson = Newtonsoft.Json.JsonConvert.SerializeObject(reqObj);
             var reqBytes = System.Text.Encoding.UTF8.GetBytes(reqJson);
-            if (!_isBlockListHandlerRegistered)
+            string key = $"{gridId}:{blockName}:{steamId}";
+            var tcs = new TaskCompletionSource<string>();
+            _blockDeleteTcsDict[key] = tcs;
+            if (!_isBlockActionHandlerRegistered)
             {
-                Sandbox.ModAPI.MyAPIGateway.Multiplayer.RegisterSecureMessageHandler(MSG_ID_BLOCK_ACTION, OnBlockActionResponse);
-                _isBlockListHandlerRegistered = true;
+                Sandbox.ModAPI.MyAPIGateway.Multiplayer.RegisterSecureMessageHandler(MSG_ID_BLOCK_DELETE, OnBlockActionResponse);
+                _isBlockActionHandlerRegistered = true;
             }
             try
             {
                 Console.WriteLine($"[Client] Sending block action message: gridId={gridId}, blockName={blockName}, steamId={steamId}");
-                bool sent = Sandbox.ModAPI.MyAPIGateway.Multiplayer.SendMessageToServer(MSG_ID_BLOCK_ACTION, reqBytes);
+                bool sent = Sandbox.ModAPI.MyAPIGateway.Multiplayer.SendMessageToServer(MSG_ID_BLOCK_DELETE, reqBytes);
                 Console.WriteLine($"[Client] SendMessageToServer returned: {sent}");
                 if (!sent)
                 {
-                    Console.WriteLine("[Client] SendMessageToServer failed to send block action message!");
+                    _blockDeleteTcsDict.TryRemove(key, out _);
+                    return false;
                 }
             }
             catch (Exception ex)
             {
+                _blockDeleteTcsDict.TryRemove(key, out _);
                 Console.WriteLine($"Failed to send block action message: {ex.Message}");
+                return false;
+            }
+            var completedTask = await Task.WhenAny(tcs.Task, Task.Delay(5000));
+            if (completedTask == tcs.Task)
+            {
+                var response = tcs.Task.Result;
+                if (!string.IsNullOrEmpty(response) && response.ToLower().Contains("success"))
+                    return true;
+                else
+                    return false;
+            }
+            else
+            {
+                _blockDeleteTcsDict.TryRemove(key, out _);
+                Console.WriteLine("Timeout waiting for block action response.");
+                return false;
             }
         }
         private void OnBlockActionResponse(ushort handlerId, byte[] data, ulong sender, bool fromServer)
@@ -490,7 +516,13 @@ namespace ClientPlugin
             try
             {
                 var json = System.Text.Encoding.UTF8.GetString(data);
-                Console.WriteLine($"[OnBlockActionResponse] Received data from server. Length: {data?.Length}");
+                var obj = Newtonsoft.Json.Linq.JObject.Parse(json);
+                var gridId = obj["grid_id"]?.ToString();
+                var blockName = obj["block_name"]?.ToString();
+                var steamId = obj["steam_id"]?.ToString();
+                string key = $"{gridId}:{blockName}:{steamId}";
+                if (_blockDeleteTcsDict.TryRemove(key, out var tcs))
+                    tcs.TrySetResult(json);
                 Sandbox.ModAPI.MyAPIGateway.Utilities.ShowMessage("GridManager", $"Block action response: {json}");
             }
             catch (Exception ex)
