@@ -63,6 +63,7 @@ namespace TorchPlugin
 
         private const ushort MSG_ID_GET_BLOCKS = 42424;
         private const ushort MSG_ID_GET_GRIDS = 42425;
+        private const ushort MSG_ID_BLOCK_DELETE = 42426;
 
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
         public override void Init(ITorchBase torch)
@@ -449,6 +450,53 @@ namespace TorchPlugin
             }
         }
 
+        private void OnBlockDeleteMessage(ushort handlerId, byte[] data, ulong sender, bool fromServer)
+        {
+            Log.Info($"[ModAPI] OnBlockDeleteMessage received: handlerId={handlerId}, sender={sender}, fromServer={fromServer}, dataLength={data?.Length}");
+            try
+            {
+                var json = Encoding.UTF8.GetString(data);
+                var obj = JObject.Parse(json);
+                long gridId = obj["grid_id"]?.ToObject<long>() ?? 0;
+                string blockName = obj["block_name"]?.ToString();
+                ulong steamId = obj["steam_id"]?.ToObject<ulong>() ?? 0;
+                Log.Info($"[ModAPI] Received block-delete: gridId={gridId}, blockName={blockName}, steamId={steamId}, sender={sender}");
+
+                var entity = MyAPIGateway.Entities.GetEntityById(gridId) as IMyCubeGrid;
+                bool foundAndDeleted = false;
+                if (entity != null && !string.IsNullOrEmpty(blockName))
+                {
+                    var blocks = new List<IMySlimBlock>();
+                    entity.GetBlocks(blocks);
+                    foreach (var block in blocks)
+                    {
+                        if (block.OwnerId == 0) continue;
+                        var blockSteamId = MyAPIGateway.Players.TryGetSteamId(block.OwnerId);
+                        var name = block.FatBlock?.DisplayNameText ?? block.BlockDefinition.ToString();
+                        if (blockSteamId == steamId && name == blockName)
+                        {
+                            block.CubeGrid.RemoveBlock(block);
+                            foundAndDeleted = true;
+                            Log.Info($"[ModAPI] Block deleted: {blockName} by steamId={steamId}");
+                            break;
+                        }
+                    }
+                }
+                var responseObj = new { success = foundAndDeleted };
+                var responseJson = JsonConvert.SerializeObject(responseObj);
+                var responseBytes = Encoding.UTF8.GetBytes(responseJson);
+                Sandbox.ModAPI.MyAPIGateway.Multiplayer.SendMessageTo(MSG_ID_BLOCK_DELETE, responseBytes, sender);
+            }
+            catch (Exception ex)
+            {
+                Log.Error($"[ModAPI] block-delete handler error: {ex.Message}");
+                var responseObj = new { success = false, error = ex.Message };
+                var responseJson = JsonConvert.SerializeObject(responseObj);
+                var responseBytes = Encoding.UTF8.GetBytes(responseJson);
+                Sandbox.ModAPI.MyAPIGateway.Multiplayer.SendMessageTo(MSG_ID_BLOCK_DELETE, responseBytes, sender);
+            }
+        }
+
         private async Task NotifyGridsAsync(ulong steamId, List<IMyCubeGrid> grids)
         {
             try
@@ -499,10 +547,14 @@ namespace TorchPlugin
                 case TorchSessionState.Loaded:
                     Sandbox.ModAPI.MyAPIGateway.Multiplayer.RegisterSecureMessageHandler(MSG_ID_GET_BLOCKS, OnGetBlocksMessage);
                     Sandbox.ModAPI.MyAPIGateway.Multiplayer.RegisterSecureMessageHandler(MSG_ID_GET_GRIDS, OnGetGridsMessage);
+                    Sandbox.ModAPI.MyAPIGateway.Multiplayer.RegisterSecureMessageHandler(MSG_ID_BLOCK_DELETE, OnBlockDeleteMessage);
                     break;
                 case TorchSessionState.Unloading:
                     Log.Debug("Unloading");
+                    Sandbox.ModAPI.MyAPIGateway.Multiplayer.RegisterSecureMessageHandler(MSG_ID_GET_BLOCKS, OnGetBlocksMessage);
+
                     Sandbox.ModAPI.MyAPIGateway.Multiplayer.UnregisterSecureMessageHandler(MSG_ID_GET_GRIDS, OnGetGridsMessage);
+                    Sandbox.ModAPI.MyAPIGateway.Multiplayer.UnregisterSecureMessageHandler(MSG_ID_BLOCK_DELETE, OnBlockDeleteMessage);
                     break;
                 case TorchSessionState.Unloaded:
                     Log.Debug("Unloaded");
