@@ -9,7 +9,7 @@ namespace ClientPlugin.GridList
     {
         public readonly string FriendlyName;
         public override string GetFriendlyName() => FriendlyName;
-        public GridDetailScreen(string friendlyName,Func<List<MyGuiControlBase>> controlsFactory)
+        public GridDetailScreen(string friendlyName)
             : base(new Vector2(0.5f, 0.5f), MyGuiConstants.SCREEN_BACKGROUND_COLOR, new Vector2(0.6f, 0.8f))
         {
             FriendlyName = friendlyName;
@@ -21,16 +21,20 @@ namespace ClientPlugin.GridList
             m_isTopMostScreen = true;
             m_isTopScreen = true;
             m_drawEvenWithoutFocus = true;
-            var controls = controlsFactory?.Invoke() ?? new List<MyGuiControlBase>();
 
-            // 컨트롤이 MyGuiControlList 하나만 있다고 가정하고, 중앙에 배치
-            if (controls.Count > 0)
-            {
-                var list = controls[0];
-                list.Position = new Vector2(0.05f, 0.02f);
-                Controls.Add(list);
-            }
+
         }
+        public void RecreateControlsWithGridId(bool constructor, string gridid)
+        {
+            base.RecreateControls(constructor);
+            AddCaption(gridid);
+        }
+        public override void RecreateControls(bool constructor)
+        {
+            base.RecreateControls(constructor);
 
+
+        }
     }
+
 }
