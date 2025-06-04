@@ -53,11 +53,7 @@ namespace ClientPlugin
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
         public void Init(object gameInstance)
         {
-            AllocConsole();
-            var stdOut = Console.OpenStandardOutput();
-            var writer = new StreamWriter(stdOut) { AutoFlush = true };
-            Console.SetOut(writer);
-            Console.WriteLine("=== GridManager Plugin Console Initialized ===");
+
 #if DEBUG
             // Allow the debugger some time to connect once the plugin assembly is loaded
             Thread.Sleep(100);
