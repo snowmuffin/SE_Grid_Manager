@@ -1,147 +1,221 @@
-# Space Engineers Plugin Template
+# SE Grid Manager
 
-[Client only version of the template](https://github.com/sepluginloader/ClientPluginTemplate)
+A Space Engineers plugin that provides comprehensive grid management capabilities for both client and server environments. This plugin allows players to view, manage, and delete blocks from their grids through an in-game interface, with support for Torch server integration.
 
-## Prerequisites
+## Features
 
-- [Space Engineers](https://store.steampowered.com/app/244850/Space_Engineers/)
-- [Python 3.x](https://python.org) (tested with 3.9)
-- [Plugin Loader](https://github.com/sepluginloader)
-- [Torch Server](https://torchapi.com/) in `C:\Torch`, run `Torch.Server.exe` once to prepare
-- [.NET Framework 4.8.1 Developer Pack](https://dotnet.microsoft.com/en-us/download/dotnet-framework/net481)
+- **Client-side Grid Management**: In-game UI for viewing and managing player grids
+- **Block-level Operations**: View and delete individual blocks from grids
+- **Multi-platform Support**: Works with standalone Space Engineers, dedicated servers, and Torch servers
+- **HTTP API Integration**: RESTful API endpoints for external integrations
+- **Real-time Communication**: Client-server messaging for real-time grid updates
+- **Owner-based Filtering**: Only shows blocks owned by the requesting player
 
-## Create your plugin project
+## Architecture
 
-1. Click on **Use this template** (top right corner on GitHub) and follow the wizard to create your repository
-2. Clone your repository to have a local working copy
-3. Run `setup.py`, enter the name of your plugin project in `CapitalizedWords` format
-4. Let `setup.py` auto-detect your install locations or fill them in manually
-5. Open the solution in Visual Studio or Rider
-6. Make a test build, it should deploy the resulting files to their respective target folders (see them in the build log)
-7. Test that the empty plugin can be enabled in Plugin Loader (client), Torch Server's UI and the Dedicated Server's UI
-9. Replace the contents of this file with the description of your plugin
-10. Follow the TODO comments in the source code
-11. Look into the source code of other plugins for examples on how to patch the game
+The project consists of three main components:
 
-You may find the source code of these plugins inspirational:
-- [Performance Improvements](https://github.com/viktor-ferenczi/performance-improvements)
-- [Multigrid Projector](https://github.com/viktor-ferenczi/multigrid-projector)
-- [Toolbar Manager](https://github.com/viktor-ferenczi/toolbar-manager)
+### 1. ClientPlugin
+- Provides in-game UI for players
+- Handles keyboard shortcuts (Ctrl+G to open grid list)
+- Communicates with server plugins via secure messaging
+- Displays grid lists and detailed block information
 
-In case of questions please feel free to ask the SE plugin developer community on the
-[Plugin Loader](https://discord.gg/6ETGRU3CzR) or the [Torch](https://discord.gg/xNFpHM6V8Q)
-Discord server in their relevant text channels. They also have dedicated channels for
-plugin ideas, should you look for a new one.
+### 2. TorchPlugin
+- Server-side plugin for Torch server environments
+- HTTP listener with REST API endpoints
+- Manages grid data and player permissions
+- Handles client requests for grid and block information
 
-_Good luck!_
+### 3. DedicatedPlugin
+- Basic server-side plugin for dedicated server environments
+- Lightweight implementation for non-Torch setups
+- Provides core grid management functionality
 
-## Remarks
+### 4. Shared
+- Common code shared between all plugins
+- Configuration management
+- Logging utilities
+- Harmony patching helpers
 
-### Plugin configuration
+## Requirements
 
-You can have a nice configuration dialog with little effort in the game client.
-Customize the `Config` class in the `ClientPlugin` project, just follow the examples.
-It supports many different data types, including key binding. Once you have more
-options than can fit on the screen the dialog will have a vertical scrollbar.
+### Development Environment
+- **Visual Studio 2019 or later** (or VS Code with C# extension)
+- **.NET Framework 4.8.1**
+- **Space Engineers Game Files** (for client plugin references)
+- **Space Engineers Dedicated Server** (for server plugin references)
+- **Torch Server** (optional, for Torch plugin development)
 
-![Example config dialog](Doc/ConfigDialogExample.png "Example config dialog")
+### Game Dependencies
+- **Space Engineers** (latest version)
+- **Harmony 2.3.3** (included via NuGet)
+- **Newtonsoft.Json** (included with Space Engineers)
 
-The server plugin configuration works differently, please see the `Config` folder
-of the `Shared` project for that. Torch plugins also have a XAML descriptor for
-their configuration. The client side `Config` class is not integrated with the
-server side configuration, currently.
+## Initial Setup
 
-### Conditional compilation
+Since this project lacks automated dependency resolution, you'll need to manually configure the assembly references:
 
-- DedicatedPlugin defines `DEDICATED`, TorchPlugin defines `TORCH`.
-  You can use those names for conditional compilation by `#if` blocks in the Shared project.
-  For example if you want your code to compile for client and dedicated server plugins, but
-  not for the Torch plugin, then put it into a `#if !TORCH` ... `#endif` block.
+### 1. Clone the Repository
+```bash
+git clone https://github.com/snowmuffin/SE_Grid_Manager.git
+cd SE_Grid_Manager
+```
 
-### Shared project
+### 2. Configure Directory.Build.props
+Edit `Directory.Build.props` and update the paths to match your installations:
 
-- Put any code you can share between the plugin projects into the Shared project.
-  Try to keep the redundancy at the minimum.
+```xml
+<Project>
+  <PropertyGroup>
+    <!-- Path to Space Engineers game installation -->
+    <Bin64>C:\Program Files (x86)\Steam\steamapps\common\SpaceEngineers\Bin64</Bin64>
+    
+    <!-- Path to Space Engineers Dedicated Server -->
+    <Dedicated64>C:\Program Files (x86)\Steam\steamapps\common\SpaceEngineersDedicatedServer\DedicatedServer64</Dedicated64>
+    
+    <!-- Path to Torch Server (optional) -->
+    <Torch>C:\TorchServer</Torch>
+  </PropertyGroup>
+</Project>
+```
 
-- The DLLs required by your Shared code need to be added as a dependency to all the projects,
-  even if some of the code is not used by one of the projects.
+### 3. Manual Assembly Setup (Required)
 
-- You can delete the projects you don't need. If you want only a single project,
-  then move over what is in the Shared one, then you can delete Shared.
+Since the automated setup is not yet implemented, you need to manually ensure all required assemblies are available:
 
-### Torch plugin
+#### For ClientPlugin:
+Verify these Space Engineers assemblies exist in your `$(Bin64)` path:
+- `Sandbox.Game.dll`
+- `Sandbox.Common.dll`
+- `Sandbox.Graphics.dll`
+- `VRage.dll`
+- `VRage.Game.dll`
+- `VRage.Input.dll`
+- `VRage.Library.dll`
+- `VRage.Math.dll`
+- `Newtonsoft.Json.dll`
+- All other VRage and system assemblies referenced in the .csproj
 
-- For Torch plugins see also the official
-  [Torch Plugin Template](https://torchapi.com/wiki/index.php/Torch_Plugin_Template),
-  it has some additional information in its `README.txt` file.
+#### For TorchPlugin:
+Verify these Torch assemblies exist in your `$(Torch)` path:
+- `Torch.dll`
+- `Torch.API.dll`
+- `Torch.Server.exe`
+- All dedicated server assemblies in `$(Torch)\DedicatedServer64\`
 
-- If you don't need the config UI in Torch for your plugin, then remove the IWpfPlugin
-  from the Plugin class and the `xaml` and `xaml.cs` files. Also remove the now unused
-  `GetControl` method.
+#### For DedicatedPlugin:
+Verify the dedicated server assemblies exist in your `$(Dedicated64)` path.
 
-- While you can use HarmonyLib for patching in Torch plugins, Torch has its own patching
-  mechanism, which is more compatible with other plugins, but less convenient to use.
-  If you want to remove Harmony from the Torch plugin, then search for USE_HARMONY in all
-  files, which will show you where to make changes. Also remove Lib.Harmony from the
-  TorchPlugin project's NuGet package dependencies. Please note then in this case you
-  must also remove all uses of Harmony from your Torch plugin code.
+### 4. Build the Solution
+```bash
+# Using Visual Studio
+# Open Gridmanager.sln and build the solution
 
-### How to prevent the potential crash after game updates
+# Using command line (if MSBuild is available)
+msbuild Gridmanager.sln /p:Configuration=Debug /p:Platform="Any CPU"
+```
 
-Please use the `EnsureCode` attribute on patch methods to safely skip loading the plugin
-with an error logged should the code in any of the methods patched would change as part of
-a game update. It is a good way to prevent blaming crashes on your plugin after game updates,
-so your plugin can remain safely enabled (but effectively disabled) until you have a chance
-to release an update for compatibility with the new game version. Please see the examples in
-the `Shared/Patches` folder on how to use this attribute.
+## Installation
 
-The hexadecimal hash code is logged in case of a mismatch, so you can read them from the logs
-for any new method you patch, just leave the string initially empty in the `EnsureCode`
-attribute, then replace with the value from the error log line after you run your plugin
-with the patch for the first time.
+### Client Plugin Installation
+1. Build the `ClientPlugin` project
+2. Copy `Gridmanager.dll` from `ClientPlugin\bin\Debug\` to your Space Engineers Plugins folder:
+   - `%AppData%\SpaceEngineers\Plugins\Local\`
 
-On Proton (Linux) this check tends to cause issues, therefore there is a configuration flag
-to turn it OFF. Setting the `SE_PLUGIN_DISABLE_METHOD_VERIFICATION` environment variable to
-any value on the player's host also disables game code verification.
+### Torch Server Plugin Installation
+1. Build the `TorchPlugin` project
+2. Copy the following files to your Torch `Plugins\` folder:
+   - `Gridmanager.dll`
+   - `manifest.xml`
 
-### Debugging
+### Dedicated Server Plugin Installation
+1. Build the `DedicatedPlugin` project
+2. Copy `Gridmanager.dll` to your dedicated server's Plugins folder
 
-- Always use a debug build if you want to set breakpoints and see variable values.
-- A debug build defines `DEBUG`, so you can add conditional code in `#if DEBUG` blocks.
-- While debugging a specific target unload the other two. It prevents the IDE to be confused.
-- If breakpoints do not "stick" or do not work, then make sure that:
-  - Other projects are unloaded, only the debugged one and Shared are loaded.
-  - Debugger is attached to the running process.
-  - You are debugging the code which is running (no code changes made since the build).
-- Transpiler patches will write a `harmony.log.txt` file to your `Desktop` while running `Debug`
-  builds. Never release a debug build to your users, because that would litter their desktop
-  as well.
-- To debug transpiler changes to the IL code it is most practical to generate the files
-  of the method's IL code before and after the change made, so you can just diff them.
-  Please see the transpiler example under the `Shared/Patches` folder for the details.
+## Usage
 
-### Troubleshooting
+### Client Controls
+- **Ctrl+G**: Open the grid list interface
+- Navigate through your grids and view detailed block information
+- Click "Delete Block" to remove individual blocks (requires server permission)
 
-- If the IDE looks confused, then restarting it and the debugged game usually works.
-- If the restart did not work, then try to delete caches used by your IDE and restart.
-- If your build cannot deploy (just runs in a loop), then something locks the DLL file.
-- Look for running game processes (maybe stuck running in the background) and kill them.
+### Server Configuration (Torch)
+The Torch plugin provides these configuration options:
+- **Enable HTTP Listener**: Enable/disable the REST API
+- **HTTP Port**: Port for the HTTP listener (default: 8080)
+- **Web Host Address**: Host address for notifications
 
-### Release
+### API Endpoints (Torch Plugin)
+- `GET /ping`: Health check endpoint
+- `POST /Update-Grid`: Update grid information for a player
+- `POST /get-blocks`: Retrieve block information for a specific grid
 
-- Always make your final release from a RELEASE build. (More optimized, removes debug code.)
-- Always test your RELEASE build before publishing. Sometimes is behaves differently.
-- In case of client plugins the Plugin Loader compiles your code, watch out for differences.
+## Development Notes
 
-### Communication
+### Project Structure
+```
+SE_Grid_Manager/
+├── ClientPlugin/          # Client-side plugin
+├── TorchPlugin/           # Torch server plugin  
+├── DedicatedPlugin/       # Dedicated server plugin
+├── Shared/                # Common shared code
+├── Directory.Build.props  # Global build properties
+├── Gridmanager.sln       # Visual Studio solution
+├── setup.py              # Python setup script (for future use)
+└── verify_props.bat      # Build verification script
+```
 
-- In your documentation always include how players or server admins should report bugs.
-- Try to be reachable and respond on a timely manner over your communication channels.
-- Be open for constructive critics.
+### Build Events
+The project uses pre-build and post-build events:
+- **Pre-build**: Verifies that all assembly paths in `Directory.Build.props` exist
+- **Post-build**: Deploys compiled plugins to appropriate game directories
 
-### Abandoning your project
+### Future Enhancements
+- Automated dependency resolution via `setup.py`
+- Package manager integration
+- Simplified installation process
+- Extended API functionality
 
-- Always consider finding a new maintainer, ask around at least once.
-- If you ever abandon the project, then make it clear on its GitHub page.
-- Abandoned projects should be made hidden on PluginHub and Torch's plugin list.
-- Keep the code available on GitHub, so it can be forked and continued by others.
+## Troubleshooting
+
+### Common Issues
+
+1. **Build Errors - Missing References**
+   - Ensure all paths in `Directory.Build.props` are correct
+   - Verify game installations are up to date
+   - Check that all required assemblies exist
+
+2. **Plugin Not Loading**
+   - Verify the plugin DLL is in the correct folder
+   - Check game logs for error messages
+   - Ensure .NET Framework 4.8.1 is installed
+
+3. **Client-Server Communication Issues**
+   - Verify both client and server plugins are installed
+   - Check network connectivity and firewall settings
+   - Review server logs for message handling errors
+
+### Logging
+The plugin uses comprehensive logging. Check these locations for log files:
+- Client: `%AppData%\SpaceEngineers\Logs\`
+- Server: Your server's log directory
+- Torch: Torch logs directory
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Ensure all builds pass
+5. Submit a pull request
+
+## License
+
+This project is licensed under the terms specified in the LICENSE file.
+
+## Credits
+
+- Built for Space Engineers by Keen Software House
+- Uses Harmony for runtime patching
+- Torch server integration support
