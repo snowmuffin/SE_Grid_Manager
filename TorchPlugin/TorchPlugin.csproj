@@ -42,7 +42,7 @@
       <Private>False</Private>
     </Reference>
     <Reference Include="EmptyKeys.UserInterface, Version=3.2.0.0, Culture=neutral, PublicKeyToken=null">
-      <HintPath>..\Bin64\EmptyKeys.UserInterface.dll</HintPath>
+      <HintPath>$(Torch)\DedicatedServer64\EmptyKeys.UserInterface.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="MahApps.Metro, Version=1.6.1.4, Culture=neutral, PublicKeyToken=null">
@@ -73,9 +73,10 @@
       <HintPath>$(Torch)\netstandard.dll</HintPath>
       <Private>False</Private>
     </Reference>
-    <Reference Include="Newtonsoft.Json, Version=13.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed, processorArchitecture=MSIL">
+    <Reference Include="Newtonsoft.Json, Version=12.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>..\..\SE_Test_Server\torch-server\DedicatedServer64\Newtonsoft.Json.dll</HintPath>
+      <HintPath>$(Torch)\Newtonsoft.Json.dll</HintPath>
+      <Private>False</Private>
     </Reference>
     <Reference Include="NLog, Version=4.0.0.0, Culture=neutral, PublicKeyToken=5120e14c03d0593c">
       <HintPath>$(Torch)\NLog.dll</HintPath>
