@@ -360,3 +360,6 @@ MigrationBackup/
 
 # JetBrains Rider project files
 /.idea/
+
+# Local SteamCMD path (see SteamUpload/steamcmd_path.txt.example)
+WorkshopMod/SteamUpload/steamcmd_path.txt

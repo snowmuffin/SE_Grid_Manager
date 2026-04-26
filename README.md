@@ -142,6 +142,7 @@ SE_Grid_Manager/
 ├── DedicatedPlugin/
 ├── Shared/
 ├── WorkshopMod/SEGridManagerClient/   # Scripted client mod (ModAPI)
+├── WorkshopMod/SteamUpload/           # SteamCMD publish scripts (not part of the mod files)
 ├── Directory.Build.props
 ├── Gridmanager.sln
 ├── verify_props.bat

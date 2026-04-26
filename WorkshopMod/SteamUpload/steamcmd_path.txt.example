@@ -1,0 +1,3 @@
+# Optional: one line, full path to steamcmd.exe (no quotes). # lines are ignored.
+C:\SteamCMD\steamcmd.exe
+# C:\Program Files (x86)\Steam\steamcmd\steamcmd.exe

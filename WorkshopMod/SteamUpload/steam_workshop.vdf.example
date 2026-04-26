@@ -1,0 +1,11 @@
+"workshopitem"
+{
+	"appid" "244850"
+	"publishedfileid" "YOUR_STEAM_PUBLISHEDFILEID"
+	"contentfolder" "C:/path/to/SEGridManagerClient"
+	"previewfile" "C:/path/to/SEGridManagerClient/thumb.jpg"
+	"visibility" "0"
+	"title" "SE Grid Manager Client"
+	"description" "Client mod for remote clients only; server must run Gridmanager (Torch). Subscribing does not enable features without that server. contentfolder = mod root only, not this SteamUpload folder."
+	"changenote" "1.0"
+}
