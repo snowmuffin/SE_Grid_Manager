@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Rename to modinfo.sbmi after your first Workshop publish and fill real IDs (see wiki "Manually creating the modinfo.sbmi"). Local testing does not require this file. -->
+<MyObjectBuilder_ModInfo xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <WorkshopIds>
+    <WorkshopId>
+      <Id>YOUR_STEAM_WORKSHOP_ITEM_ID</Id>
+      <ServiceName>Steam</ServiceName>
+    </WorkshopId>
+  </WorkshopIds>
+</MyObjectBuilder_ModInfo>

@@ -1,85 +1,76 @@
-```markdown
 # SE Grid Manager
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 ## Overview
 
-SE Grid Manager is a powerful plugin for *Space Engineers* that facilitates comprehensive grid management for both clients and server environments. The plugin enables players to effectively view, manage, and delete blocks from their grids via an intuitive in-game interface, while also supporting seamless integration with Torch server environments.
+SE Grid Manager is a *Space Engineers* plugin stack for **server-side grid management** (Torch and dedicated). Players interact through **ModAPI secure messaging**; the former **ClientPlugin** (WPF in-game UI) has been **removed** from this repository. A **scripted Workshop / local mod** skeleton lives under `WorkshopMod/SEGridManagerClient` and is intended to carry the in-game client experience forward.
 
 ## Features
 
-- **Client-side Grid Management**: An in-game user interface (UI) allows players to manage their grids effortlessly.
-- **Block-level Operations**: Provides the ability to view and delete individual blocks from grids, enhancing player control and flexibility.
-- **Multi-platform Support**: Compatible with standalone *Space Engineers*, dedicated servers, and Torch servers, offering versatility in deployment.
-- **HTTP API Integration**: Exposes RESTful API endpoints for external integrations, making it possible to interact programmatically with the grid management system.
-- **Real-time Communication**: Implements client-server messaging to provide timely updates on grid status and changes.
-- **Owner-based Filtering**: Displays only blocks owned by the requesting player, ensuring privacy and security.
+- **Client experience**: Local or Workshop **scripted mod** (`WorkshopMod/SEGridManagerClient`) using the same message IDs as the Torch plugin (see that folder’s README).
+- **Server-side grid management**: Torch and dedicated server builds.
+- **Block-level operations**: View and delete flows via server APIs and messaging (contract in `TorchPlugin/Plugin.cs`).
+- **Multi-platform support**: Dedicated and Torch deployments.
+- **HTTP API integration** (Torch): REST endpoints for external tools.
+- **Real-time communication**: ModAPI secure messages between client mod and server plugin.
+- **Owner-based filtering**: Server enforces ownership rules for sensitive operations.
 
 ## Architecture
 
-The SE Grid Manager is organized into four primary components, each serving a specific purpose:
+The project is organized into these parts:
 
-### 1. ClientPlugin
+### 1. TorchPlugin
 
-- Provides the in-game UI for players to interact with their grids.
-- Implements keyboard shortcuts (e.g., `Ctrl+G`) to quickly access the grid management interface.
-- Facilitates secure communication with server plugins to retrieve and manipulate grid data.
-- Displays detailed block information, enhancing player awareness of their grid configurations.
+- Server-side plugin for Torch.
+- HTTP listener and REST API.
+- Grid data, permissions, and ModAPI message handlers for client requests.
 
-### 2. TorchPlugin
+### 2. DedicatedPlugin
 
-- Functions as a server-side plugin tailored for Torch server environments.
-- Listens for HTTP requests and provides REST API endpoints for external applications.
-- Manages grid data and player permissions, ensuring that operations are performed securely and accurately.
-- Processes client requests for grid and block information, serving as the backbone for server-client interactions.
+- Lightweight server plugin for non-Torch dedicated hosts.
+- Core grid management without Torch-specific features.
 
-### 3. DedicatedPlugin
+### 3. Shared
 
-- A lightweight server-side plugin designed for dedicated server environments.
-- Offers core grid management functionalities without the overhead of Torch-specific features.
-- Ensures basic grid management capabilities are accessible in non-Torch setups.
+- Common code for plugins.
+- Configuration, logging, Harmony helpers.
 
-### 4. Shared
+### 4. Client scripted mod (`WorkshopMod/SEGridManagerClient`)
 
-- Contains common code that is utilized across all plugins.
-- Manages configuration settings and logging utilities.
-- Includes Harmony patching helpers to facilitate code modifications and enhancements.
+- **Local / Workshop** mod layout: `Data/Scripts/SEGridManagerClient/` (see [Mod Scripting](https://spaceengineers.wiki.gg/wiki/Modding/Reference/ModScripting)).
+- Copy the `SEGridManagerClient` folder into `%AppData%\SpaceEngineers\Mods\` and enable it on the client. Details: `WorkshopMod/SEGridManagerClient/README.md`.
 
 ## Requirements
 
-### Development Environment
+### Development environment
 
-To develop and build the SE Grid Manager, ensure you have the following installed:
+- **Visual Studio 2019 or later** (or VS Code with the C# extension).
+- **.NET Framework 4.8** (or 4.8.1 if your SDK provides reference assemblies for it).
+- **Space Engineers `Bin64`** (optional; useful if you extend the scripted mod with additional game references).
+- **Space Engineers Dedicated Server** (`DedicatedServer64`) for dedicated plugin references.
+- **Torch Server** (optional) for Torch plugin references.
 
-- **Visual Studio 2019 or later** (or Visual Studio Code with the C# extension)
-- **.NET Framework 4.8.1**
-- **Space Engineers Game Files** (for client plugin references)
-- **Space Engineers Dedicated Server** (for server plugin references)
-- **Torch Server** (optional for Torch plugin development)
+### Game dependencies
 
-### Game Dependencies
-
-- **Space Engineers** (latest version)
-- **Harmony 2.3.3** (included via NuGet)
-- **Newtonsoft.Json** (included with *Space Engineers*)
+- **Space Engineers** (current branch used by your server).
+- **Harmony 2.3.3** (NuGet).
+- **Newtonsoft.Json** (as shipped with the game / Torch stack).
 
 ## Installation
 
-### Initial Setup
+### Initial setup
 
-Since this project lacks automated dependency resolution, you'll need to manually configure assembly references.
+This solution expects paths in `Directory.Build.props` to point at your installs.
 
-#### 1. Clone the Repository
+#### 1. Clone the repository
 
 ```bash
 git clone https://github.com/snowmuffin/SE_Grid_Manager.git
 cd SE_Grid_Manager
 ```
 
-#### 2. Configure Directory.Build.props
-
-Edit `Directory.Build.props` to update the paths to match your installations:
+#### 2. Configure `Directory.Build.props`
 
 ```xml
 <Project>
@@ -91,96 +82,103 @@ Edit `Directory.Build.props` to update the paths to match your installations:
 </Project>
 ```
 
-#### 3. Manual Assembly Setup
+#### 3. Manual assembly setup
 
-Ensure the required assemblies are available:
+##### TorchPlugin
 
-##### For ClientPlugin:
-
-Verify that the following assemblies exist in your `$(Bin64)` path:
-
-- `Sandbox.Game.dll`
-- `Sandbox.Common.dll`
-- `Sandbox.Graphics.dll`
-- `VRage.dll`
-- `VRage.Game.dll`
-- `VRage.Input.dll`
-- `VRage.Library.dll`
-- `VRage.Math.dll`
-- `Newtonsoft.Json.dll`
-
-##### For TorchPlugin:
-
-Verify that the Torch assemblies exist in your `$(Torch)` path:
+Verify Torch assemblies under `$(Torch)` (typical names include):
 
 - `Torch.dll`
 - `Torch.API.dll`
 - `Torch.Server.exe`
 
-##### For DedicatedPlugin:
+##### DedicatedPlugin
 
-Verify that the dedicated server assemblies exist in your `$(Dedicated64)` path.
+Verify dedicated server assemblies under `$(Dedicated64)` as referenced by the project.
 
-#### 4. Build the Solution
+#### 4. Build the solution
 
 ```bash
-# Using Visual Studio
-# Open Gridmanager.sln and build the solution
-
-# Using command line (if MSBuild is available)
 msbuild Gridmanager.sln /p:Configuration=Debug /p:Platform="Any CPU"
 ```
 
-### Client Plugin Installation
+Pre-build runs `verify_props.bat` to validate paths.
 
-1. Build the `ClientPlugin` project.
-2. Copy `Gridmanager.dll` from `ClientPlugin\bin\Debug\` to your Space Engineers Plugins folder:
-   - `%AppData%\SpaceEngineers\Plugins\Local\`
+### Workshop client mod (local)
 
-### Torch Server Plugin Installation
+Copy `WorkshopMod\SEGridManagerClient` (the folder that contains `Data`) to `%AppData%\SpaceEngineers\Mods\`, then enable the mod in the game. The server must run the Gridmanager Torch (or compatible) plugin.
 
-1. Build the `TorchPlugin` project.
-2. Copy the following files to your Torch `Plugins\` folder:
-   - `Gridmanager.dll`
-   - `manifest.xml`
+### Torch server plugin
 
-### Dedicated Server Plugin Installation
+1. Build **TorchPlugin**.
+2. Deploy to Torch `Plugins\` (e.g. `Gridmanager.dll`, `manifest.xml` per your Torch layout).
 
-1. Build the `DedicatedPlugin` project.
-2. Copy `Gridmanager.dll` to your dedicated server's Plugins folder.
+### Dedicated server plugin
+
+1. Build **DedicatedPlugin**.
+2. Copy the plugin DLL to the dedicated server’s plugins folder.
 
 ## Usage
 
-### Client Controls
+### Client (scripted mod)
 
-- **Ctrl+G**: Opens the grid list interface.
-- Navigate through your grids to view detailed block information.
-- Click "Delete Block" to remove individual blocks (requires server permission).
+Enable **SEGridManagerClient** in the world’s mod list. Requests and replies use secure message IDs aligned with `TorchPlugin/Plugin.cs` (see `WorkshopMod/SEGridManagerClient`). In-game UI beyond logging is still to be implemented there.
 
-### Server Configuration (Torch)
+### Server configuration (Torch)
 
-The Torch plugin provides several configuration options:
+Typical options include:
 
-- **Enable HTTP Listener**: Toggle to enable or disable the REST API.
-- **HTTP Port**: Specify the port for the HTTP listener (default: 8080).
-- **Web Host Address**: Configure the address for external access.
+- **Enable HTTP Listener**: Turn the REST API on or off.
+- **HTTP Port**: Listener port (commonly `8080`).
+- **Web Host Address**: Base address for callbacks / notifications.
+
+## Development notes
+
+### Repository layout
+
+```
+SE_Grid_Manager/
+├── TorchPlugin/
+├── DedicatedPlugin/
+├── Shared/
+├── WorkshopMod/SEGridManagerClient/   # Scripted client mod (ModAPI)
+├── Directory.Build.props
+├── Gridmanager.sln
+├── verify_props.bat
+└── setup.py
+```
+
+### Build events
+
+- **Pre-build**: `verify_props.bat` checks that configured paths exist.
+- **Post-build**: Projects may copy outputs to local game/Torch folders (see each `.csproj`).
+
+## Troubleshooting
+
+1. **Missing references**  
+   Fix paths in `Directory.Build.props` and confirm game/Torch installs match the targeted build.
+
+2. **Plugin not loading**  
+   Confirm DLL and `manifest.xml` locations; read Torch / dedicated logs.
+
+3. **Client–server messaging**  
+   Ensure the **server plugin** is loaded and the **client mod** is enabled; check firewalls and that message IDs have not diverged between mod and plugin.
+
+### Logging
+
+- Game client: `%AppData%\SpaceEngineers\Logs\`
+- Dedicated / Torch: your server’s log directory
 
 ## Contributing
 
-We welcome contributions to enhance the SE Grid Manager. To contribute:
-
-1. Fork the repository.
-2. Create a new branch for your feature or bug fix.
-3. Make your changes and add tests if applicable.
-4. Submit a pull request detailing your changes.
+1. Fork the repository.  
+2. Create a branch for your change.  
+3. Submit a pull request with a clear description.
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License; see [LICENSE](LICENSE).
 
 ---
 
-For more detailed information or support, please refer to the project's [GitHub Issues](https://github.com/snowmuffin/SE_Grid_Manager/issues) or reach out to the community.
-```
-
-This README provides a comprehensive overview of the SE Grid Manager project, enhancing the existing content while maintaining its core structure and features. It includes essential sections such as installation, usage, contributing, and licensing, ensuring clarity and professionalism throughout the document.
+Questions and issues: [GitHub Issues](https://github.com/snowmuffin/SE_Grid_Manager/issues).
