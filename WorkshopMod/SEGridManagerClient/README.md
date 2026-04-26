@@ -33,13 +33,18 @@ You do **not** need `modinfo.sbmi` for local-only testing; the game creates or u
 2. Use the in-game mod UI to **upload** the mod folder; after first success, keep the generated **`modinfo.sbmi`** in the mod root for updates.
 3. If you lost `modinfo.sbmi`, use the wiki “Manually creating the modinfo.sbmi” section; a starting template is in **`modinfo.sbmi.template`** (rename and fill real Workshop item IDs).
 
-## Important: double registration on the Torch host
+## Important: when this mod registers message handlers (Torch host)
 
-The Torch server plugin **already registers** the same message handlers on the **game process** that runs inside Torch.
+The Torch server plugin **already registers** the same message handlers on the **game process** that runs inside Torch. This mod **must not** also register them on that same process, or you risk **duplicate** handler registration.
 
-This mod **must not register the same handlers on that same process**, or you risk duplicate handler registration.
+`GridManagerSession.ShouldRegisterClientHandlers` and `Init` implement this as follows:
 
-The sample registers handlers only when it believes it is a **remote client** (`MultiplayerActive && !IsServer`). **Listen-server hosts** and **dedicated** paths skip registration or never load client scripts as a player would—see `GridManagerSession.ShouldRegisterClientHandlers` and `Init`. If you need **listen-server / SP** UI, plan a separate channel (different message IDs or HTTP-only) and adjust the plugin + mod together.
+- **Dedicated**: `Init` returns early (`IsDedicated`) — no client handler registration.
+- **Listen-server host** (`MultiplayerActive && IsServer`): **no** registration — the Torch plugin already owns the handlers on this process.
+- **Remote client** (`MultiplayerActive && !IsServer`): **yes** — registration (normal multiplayer client path).
+- **Single-player** (`!MultiplayerActive`): **yes** — registration is allowed for local testing and UI work; there is no Torch process here, so there is no duplicate with the server plugin. Any replies still depend on what the local game does with those messages, not a remote Torch host.
+
+`RequestGetGrids` / `RequestGetBlocks` / `RequestBlockDelete` skip sending when `IsServer && MultiplayerActive` (listen host). In single-player that condition is false, so the send helpers still run; **a supported production path is a remote client connected to a Torch server with the Gridmanager plugin**. For first-class support on listen-server or single-player, plan a separate channel (different message IDs, HTTP, etc.) and change the plugin and mod together.
 
 ## Server requirement
 
