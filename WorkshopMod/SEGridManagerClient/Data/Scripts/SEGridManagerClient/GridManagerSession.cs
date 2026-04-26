@@ -13,6 +13,9 @@ namespace SEGridManagerClient
     [MySessionComponentDescriptor(MyUpdateOrder.NoUpdate)]
     public sealed class GridManagerSession : MySessionComponentBase
     {
+        /// <summary>Raised for each non-empty server reply (may arrive off the main game thread; UI should marshal).</summary>
+        public static event Action<string, string> ServerReply;
+
         private bool _handlersRegistered;
 
         public override void Init(MyObjectBuilder_SessionComponent sessionComponent)
@@ -81,6 +84,22 @@ namespace SEGridManagerClient
             return !MyAPIGateway.Multiplayer.IsServer;
         }
 
+        /// <summary>True when the client may send mod messages to a remote game server (not listen-server host).</summary>
+        public static bool CanSendRequests()
+        {
+            if (MyAPIGateway.Multiplayer == null)
+            {
+                return false;
+            }
+
+            if (MyAPIGateway.Multiplayer.IsServer && MyAPIGateway.Multiplayer.MultiplayerActive)
+            {
+                return false;
+            }
+
+            return true;
+        }
+
         private static void OnGetBlocksMessage(ushort handlerId, byte[] data, ulong sender, bool fromServer)
         {
             if (data == null || data.Length == 0)
@@ -92,6 +111,7 @@ namespace SEGridManagerClient
             {
                 var text = Encoding.UTF8.GetString(data);
                 MyLog.Default.WriteLine($"[SEGridManagerClient] get-blocks reply ({data.Length} B) fromServer={fromServer}: {text}");
+                ServerReply?.Invoke("get-blocks", text);
             }
             catch (Exception ex)
             {
@@ -110,6 +130,7 @@ namespace SEGridManagerClient
             {
                 var text = Encoding.UTF8.GetString(data);
                 MyLog.Default.WriteLine($"[SEGridManagerClient] get-grids reply ({data.Length} B) fromServer={fromServer}: {text}");
+                ServerReply?.Invoke("get-grids", text);
             }
             catch (Exception ex)
             {
@@ -128,6 +149,7 @@ namespace SEGridManagerClient
             {
                 var text = Encoding.UTF8.GetString(data);
                 MyLog.Default.WriteLine($"[SEGridManagerClient] block-delete reply ({data.Length} B) fromServer={fromServer}: {text}");
+                ServerReply?.Invoke("block-delete", text);
             }
             catch (Exception ex)
             {

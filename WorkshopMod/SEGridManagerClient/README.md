@@ -13,6 +13,7 @@ SEGridManagerClient/          ← mod root (this folder name is your mod folder 
       SEGridManagerClient/    ← one folder under Scripts; contains *.cs
         GridManagerProtocol.cs
         GridManagerSession.cs
+        GridManagerUiSession.cs
   README.md
   modinfo.sbmi.template       ← optional: copy to modinfo.sbmi after Workshop publish
 ```
@@ -50,7 +51,27 @@ The Torch server plugin **already registers** the same message handlers on the *
 
 The world / server must run the **Torch `Gridmanager` plugin** (same message contract).
 
+## In-game panel and commands
+
+Scripted mods use the official **`ShowMissionScreen` / `ShowNotification`** pattern (not custom `MyGuiScreenBase` windows), so the “panel” is a mission-style text screen you open from the mod.
+
+- **Default chords (less overlap with F-keys and single-mod game binds):** use **double modifiers** from `IMyInput` (`IsAnyCtrlKeyPressed` + `IsAnyShiftKeyPressed`, or Alt+Shift, **without Ctrl** for the Alt line). All still need **no chat and no game cursor** on the mod input path (THDigi-style).
+  - **Grid list (get-grids):** **Ctrl+Shift+G** or **Alt+Shift+G** — same as `/gmg getgrids`. Reply for `get-grids` always uses a **mission text panel** for readability.
+  - **Help + 30s menu:** **Ctrl+Shift+M** or **Alt+Shift+M** — mission help; then for **30s**, **plain 1/2/3** with **no** Ctrl/Alt/Shift (release modifiers first).
+  - **Anytime, no 30s wait:** **Ctrl+Shift+1/2/3** or **Alt+Shift+1/2/3** (numpad 1–3) → get grids / get blocks / delete, same as the timed 1/2/3.
+- If **G**, **M**, or digits still clash with *your* other mods, edit `MyKeys.G` / `MyKeys.M` in `GridManagerUiSession.cs` to unused letters, or use **chat only** (`/gmg` …).
+- **Chat** (prefix `/gmg` or `!gmg` — the line is not broadcast to other players as chat):
+  - `getgrids` — request grid list for your session Steam id.
+  - `grid <EntityId>` — set target grid id for the next `getblocks` or `delete`.
+  - `block <name>` — set target block (use quotes for spaces, e.g. `block "Sliding Door"`).
+  - `getblocks` — require `grid` set; request blocks on that grid.
+  - `delete` — require `grid` and `block`.
+
+Short JSON replies show as a **notification**; longer ones open a **mission screen** with the body (truncated for size).
+
+**Listen-server host:** the mod does not send the same mod messages on the **host** client (to avoid clashing with the Torch plugin). Use a **dedicated/remote** client to exercise these tools.
+
 ## Next steps (implementation)
 
-- Add in-game UI (ModAPI screens) on top of `GridManagerSession`.
-- Parse JSON responses in the `OnGetGridsMessage` / `OnGetBlocksMessage` handlers (see server `TorchPlugin/Plugin.cs` for payloads).
+- Parse JSON in the UI (optional) instead of showing raw strings from the server.
+- Richer form fields (grid id / block name) would need another UI approach or chat parsing rules (see server `TorchPlugin/Plugin.cs` for payloads).
