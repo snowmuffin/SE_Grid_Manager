@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
+    <ProjectGuid>{6C8A2E15-0E4B-4A9F-9B2C-1D3E4F5A6B7C}</ProjectGuid>
+    <OutputType>Library</OutputType>
+    <AppDesignerFolder>Properties</AppDesignerFolder>
+    <RootNamespace>SEGridManagerClient</RootNamespace>
+    <AssemblyName>SEGridManagerClient</AssemblyName>
+    <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
+    <FileAlignment>512</FileAlignment>
+    <LangVersion>8.0</LangVersion>
+    <TargetFrameworkProfile />
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
+    <PlatformTarget>x64</PlatformTarget>
+    <DebugSymbols>true</DebugSymbols>
+    <DebugType>full</DebugType>
+    <Optimize>false</Optimize>
+    <OutputPath>bin\Debug\</OutputPath>
+    <DefineConstants>DEBUG;TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
+    <PlatformTarget>x64</PlatformTarget>
+    <DebugType>pdbonly</DebugType>
+    <Optimize>true</Optimize>
+    <OutputPath>bin\Release\</OutputPath>
+    <DefineConstants>TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="Sandbox.Common, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null">
+      <HintPath>$(Bin64)\Sandbox.Common.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Sandbox.Game, Version=0.1.1.0, Culture=neutral, PublicKeyToken=null">
+      <HintPath>$(Bin64)\Sandbox.Game.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Sandbox.Game.XmlSerializers, Version=0.1.1.0, Culture=neutral, PublicKeyToken=null">
+      <HintPath>$(Bin64)\Sandbox.Game.XmlSerializers.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Sandbox.Graphics, Version=0.1.1.0, Culture=neutral, PublicKeyToken=null">
+      <HintPath>$(Bin64)\Sandbox.Graphics.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="SpaceEngineers.Game, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null">
+      <HintPath>$(Bin64)\SpaceEngineers.Game.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="SpaceEngineers.ObjectBuilders, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null">
+      <HintPath>$(Bin64)\SpaceEngineers.ObjectBuilders.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Steamworks.NET, Culture=neutral, PublicKeyToken=null">
+      <HintPath>$(Bin64)\Steamworks.NET.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="System" />
+    <Reference Include="System.Core" />
+    <Reference Include="VRage, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null">
+      <HintPath>$(Bin64)\VRage.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="VRage.Game, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null">
+      <HintPath>$(Bin64)\VRage.Game.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="VRage.Input, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null">
+      <HintPath>$(Bin64)\VRage.Input.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="VRage.Library, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null">
+      <HintPath>$(Bin64)\VRage.Library.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="VRage.Math, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null">
+      <HintPath>$(Bin64)\VRage.Math.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="VRage.Network, Version=1.0.53.0, Culture=neutral, PublicKeyToken=null">
+      <HintPath>$(Bin64)\VRage.Network.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="VRage.UserInterface, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null">
+      <HintPath>$(Bin64)\VRage.UserInterface.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="GridManagerParse.cs" />
+    <Compile Include="GridManagerNet.cs" />
+    <Compile Include="GridListScreen.cs" />
+    <Compile Include="GridDetailScreen.cs" />
+    <Compile Include="GridManagerClientSession.cs" />
+    <Compile Include="Properties\AssemblyInfo.cs" />
+  </ItemGroup>
+  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+  <PropertyGroup>
+    <ClientModRoot>$(MSBuildThisFileDirectory)..\</ClientModRoot>
+  </PropertyGroup>
+  <!-- Do not copy the DLL to the mod root by default: vanilla SE compiles Data/Scripts for session; a loose mod DLL is often not loaded, so the shipped mod uses scripts only. Set CopySeClientDllToModRoot=true to copy (e.g. PluginLoader experiments). -->
+  <Target Name="CopyModDll" AfterTargets="Build" Condition="'$(CopySeClientDllToModRoot)' == 'true'">
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(ClientModRoot)" />
+    <Copy SourceFiles="$(TargetDir)$(TargetName).pdb" DestinationFolder="$(ClientModRoot)" Condition="Exists('$(TargetDir)$(TargetName).pdb')" />
+  </Target>
+</Project>

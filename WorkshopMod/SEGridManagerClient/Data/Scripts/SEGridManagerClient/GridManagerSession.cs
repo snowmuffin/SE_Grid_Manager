@@ -16,7 +16,49 @@ namespace SEGridManagerClient
         /// <summary>Raised for each non-empty server reply (may arrive off the main game thread; UI should marshal).</summary>
         public static event Action<string, string> ServerReply;
 
-        private bool _handlersRegistered;
+        private static bool s_handlersRegistered;
+
+        /// <summary>Register secure handlers if Init ran before Multiplayer was ready; safe to call from the input path each frame.</summary>
+        public static void TryRegisterIfNeeded()
+        {
+            if (s_handlersRegistered)
+            {
+                return;
+            }
+
+            if (MyAPIGateway.Utilities == null)
+            {
+                return;
+            }
+
+            if (MyAPIGateway.Utilities.IsDedicated)
+            {
+                return;
+            }
+
+            if (!ShouldRegisterClientHandlers())
+            {
+                return;
+            }
+
+            if (MyAPIGateway.Multiplayer == null)
+            {
+                return;
+            }
+
+            try
+            {
+                MyAPIGateway.Multiplayer.RegisterSecureMessageHandler(GridManagerProtocol.MsgGetBlocks, OnGetBlocksMessage);
+                MyAPIGateway.Multiplayer.RegisterSecureMessageHandler(GridManagerProtocol.MsgGetGrids, OnGetGridsMessage);
+                MyAPIGateway.Multiplayer.RegisterSecureMessageHandler(GridManagerProtocol.MsgBlockDelete, OnBlockDeleteMessage);
+                s_handlersRegistered = true;
+                MyLog.Default.WriteLine("[SEGridManagerClient] TryRegisterIfNeeded: secure message handlers registered.");
+            }
+            catch (Exception ex)
+            {
+                MyLog.Default.WriteLine($"[SEGridManagerClient] TryRegisterIfNeeded: {ex}");
+            }
+        }
 
         public override void Init(MyObjectBuilder_SessionComponent sessionComponent)
         {
@@ -37,10 +79,18 @@ namespace SEGridManagerClient
 
             try
             {
+                if (s_handlersRegistered)
+                {
+                    return;
+                }
+                if (MyAPIGateway.Multiplayer == null)
+                {
+                    return;
+                }
                 MyAPIGateway.Multiplayer.RegisterSecureMessageHandler(GridManagerProtocol.MsgGetBlocks, OnGetBlocksMessage);
                 MyAPIGateway.Multiplayer.RegisterSecureMessageHandler(GridManagerProtocol.MsgGetGrids, OnGetGridsMessage);
                 MyAPIGateway.Multiplayer.RegisterSecureMessageHandler(GridManagerProtocol.MsgBlockDelete, OnBlockDeleteMessage);
-                _handlersRegistered = true;
+                s_handlersRegistered = true;
                 MyLog.Default.WriteLine("[SEGridManagerClient] Secure message handlers registered.");
             }
             catch (Exception ex)
@@ -51,7 +101,7 @@ namespace SEGridManagerClient
 
         protected override void UnloadData()
         {
-            if (!_handlersRegistered)
+            if (!s_handlersRegistered)
             {
                 base.UnloadData();
                 return;
@@ -59,16 +109,19 @@ namespace SEGridManagerClient
 
             try
             {
-                MyAPIGateway.Multiplayer.UnregisterSecureMessageHandler(GridManagerProtocol.MsgGetBlocks, OnGetBlocksMessage);
-                MyAPIGateway.Multiplayer.UnregisterSecureMessageHandler(GridManagerProtocol.MsgGetGrids, OnGetGridsMessage);
-                MyAPIGateway.Multiplayer.UnregisterSecureMessageHandler(GridManagerProtocol.MsgBlockDelete, OnBlockDeleteMessage);
+                if (MyAPIGateway.Multiplayer != null)
+                {
+                    MyAPIGateway.Multiplayer.UnregisterSecureMessageHandler(GridManagerProtocol.MsgGetBlocks, OnGetBlocksMessage);
+                    MyAPIGateway.Multiplayer.UnregisterSecureMessageHandler(GridManagerProtocol.MsgGetGrids, OnGetGridsMessage);
+                    MyAPIGateway.Multiplayer.UnregisterSecureMessageHandler(GridManagerProtocol.MsgBlockDelete, OnBlockDeleteMessage);
+                }
             }
             catch (Exception ex)
             {
                 MyLog.Default.WriteLine($"[SEGridManagerClient] Unregister handlers: {ex}");
             }
 
-            _handlersRegistered = false;
+            s_handlersRegistered = false;
             base.UnloadData();
         }
 
@@ -89,7 +142,7 @@ namespace SEGridManagerClient
         {
             if (MyAPIGateway.Multiplayer == null)
             {
-                return false;
+                return true;
             }
 
             if (MyAPIGateway.Multiplayer.IsServer && MyAPIGateway.Multiplayer.MultiplayerActive)
@@ -98,6 +151,25 @@ namespace SEGridManagerClient
             }
 
             return true;
+        }
+
+        private static void EmitServerReplyOnGameThread(string kind, string text)
+        {
+            if (string.IsNullOrEmpty(text))
+            {
+                return;
+            }
+
+            if (MyAPIGateway.Utilities != null)
+            {
+                var copy = text;
+                var copyKind = kind;
+                MyAPIGateway.Utilities.InvokeOnGameThread(() => ServerReply?.Invoke(copyKind, copy));
+            }
+            else
+            {
+                ServerReply?.Invoke(kind, text);
+            }
         }
 
         private static void OnGetBlocksMessage(ushort handlerId, byte[] data, ulong sender, bool fromServer)
@@ -111,7 +183,7 @@ namespace SEGridManagerClient
             {
                 var text = Encoding.UTF8.GetString(data);
                 MyLog.Default.WriteLine($"[SEGridManagerClient] get-blocks reply ({data.Length} B) fromServer={fromServer}: {text}");
-                ServerReply?.Invoke("get-blocks", text);
+                EmitServerReplyOnGameThread("get-blocks", text);
             }
             catch (Exception ex)
             {
@@ -130,7 +202,7 @@ namespace SEGridManagerClient
             {
                 var text = Encoding.UTF8.GetString(data);
                 MyLog.Default.WriteLine($"[SEGridManagerClient] get-grids reply ({data.Length} B) fromServer={fromServer}: {text}");
-                ServerReply?.Invoke("get-grids", text);
+                EmitServerReplyOnGameThread("get-grids", text);
             }
             catch (Exception ex)
             {
@@ -149,7 +221,7 @@ namespace SEGridManagerClient
             {
                 var text = Encoding.UTF8.GetString(data);
                 MyLog.Default.WriteLine($"[SEGridManagerClient] block-delete reply ({data.Length} B) fromServer={fromServer}: {text}");
-                ServerReply?.Invoke("block-delete", text);
+                EmitServerReplyOnGameThread("block-delete", text);
             }
             catch (Exception ex)
             {

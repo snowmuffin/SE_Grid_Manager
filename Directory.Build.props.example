@@ -1,0 +1,13 @@
+<Project>
+  <PropertyGroup>
+    <!-- Copy this file to Directory.Build.props and set paths to your machine. -->
+    <!-- Folder containing SpaceEngineers.exe -->
+    <Bin64>C:\Program Files (x86)\Steam\steamapps\common\SpaceEngineers\Bin64</Bin64>
+
+    <!-- Folder containing SpaceEngineersDedicated.exe -->
+    <Dedicated64>C:\Program Files (x86)\Steam\steamapps\common\SpaceEngineersDedicatedServer\DedicatedServer64</Dedicated64>
+
+    <!-- Folder containing Torch.Server.exe -->
+    <Torch>C:\TorchServer</Torch>
+  </PropertyGroup>
+</Project>

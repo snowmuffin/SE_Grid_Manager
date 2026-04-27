@@ -6,7 +6,7 @@ param(
     [string] $WorkshopId,
     [string] $ChangeNote = "",
     [string] $Title = "SE Grid Manager Client",
-    [string] $Description = "Client mod for dedicated/remote play only. The server must run the Gridmanager (Torch) plugin. Subscribing or downloading this Workshop item does not enable features by itself — you need a matching server. Not for listen-server host use. GitHub: SE_Grid_Manager.",
+    [string] $Description = "Client mod: Rich HUD terminal (requires Rich HUD Master Workshop 1965654081), or mission + /gmg fallback. Grid list, blocks, delete — same protocol as Torch Gridmanager plugin. Remote/dedicated client only (not listen-server host). GitHub: SE_Grid_Manager.",
     [string] $SteamUser = $env:STEAM_USER,
     [string] $SteamCmd = $env:STEAMCMD
 )
@@ -75,6 +75,20 @@ $previewMax = 1MB
 $thumbSize = (Get-Item -LiteralPath $thumb).Length
 if ($thumbSize -gt $previewMax) {
     throw "thumb.jpg is too large for Steam Workshop preview: $thumbSize bytes (use under 1 MB). Re-encode the JPEG or use a smaller image."
+}
+
+# SE compiles each *top-level* folder under Data/Scripts as its own assembly — RHF must live *inside* SEGridManagerClient (see Mod Scripting wiki).
+$rhfRoot = Join-Path $modRoot "Data\Scripts\SEGridManagerClient\RichHudFramework"
+if (-not (Test-Path -LiteralPath $rhfRoot)) {
+    throw @"
+Missing required folder: Data\Scripts\SEGridManagerClient\RichHudFramework
+Space Engineers puts only one assembly per folder directly under Data\Scripts; RichHudFramework cannot be a sibling of SEGridManagerClient. Vendored RHF must be under SEGridManagerClient\RichHudFramework.
+Expected: $rhfRoot
+"@
+}
+$rhfCs = @(Get-ChildItem -LiteralPath $rhfRoot -Filter *.cs -Recurse -File -ErrorAction SilentlyContinue)
+if ($rhfCs.Count -lt 30) {
+    throw "Data\Scripts\SEGridManagerClient\RichHudFramework looks incomplete (found $($rhfCs.Count) .cs files). Copy the full tree from the repository before publishing."
 }
 
 function Get-SteamCmdPath {

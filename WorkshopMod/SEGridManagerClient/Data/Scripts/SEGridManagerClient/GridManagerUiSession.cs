@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Text;
+using RichHudFramework.Client;
 using Sandbox.Game;
 using Sandbox.ModAPI;
 using VRage.Game.Components;
@@ -9,27 +10,25 @@ using VRage.Input;
 namespace SEGridManagerClient
 {
     /// <summary>
-    /// Client UI: Ctrl+Shift / Alt+Shift chords, post-help number keys, and /gmg chat. See OpenHelpMissionScreen.
+    /// Mission + notifications (Data/Scripts whitelist does not allow MyGui). Parsed JSON via GridManagerParse.
     /// </summary>
-    [MySessionComponentDescriptor(MyUpdateOrder.NoUpdate)]
+    [MySessionComponentDescriptor(MyUpdateOrder.AfterSimulation)]
     public sealed class GridManagerUiSession : MySessionComponentBase
     {
         private const string ChatPrefix0 = "/gmg";
         private const string ChatPrefix1 = "!gmg";
-        private const int ShortReplyForNotification = 200;
         private const int KeyMenuDurationSeconds = 30;
         private const int MissionBodyMaxChars = 4000;
-
-        private static readonly object PendingLock = new object();
-        private static readonly List<PendingReply> PendingReplies = new List<PendingReply>();
 
         private bool _eventsAttached;
         private DateTime _keyMenuValidUntil;
 
-        /// <summary>Target grid for get-blocks and delete (set with /gmg grid &lt;id&gt;).</summary>
+        private readonly List<GridManagerParse.GridRow> _workGrids = new List<GridManagerParse.GridRow>();
+
+        /// <summary>Target grid for get-blocks and delete (set with /gmg grid id).</summary>
         public static long TargetGridId { get; set; }
 
-        /// <summary>Target block name for delete (set with /gmg block &lt;name&gt;).</summary>
+        /// <summary>Target block name for delete (set with /gmg block name).</summary>
         public static string TargetBlockName { get; set; } = string.Empty;
 
         public override void HandleInput()
@@ -49,15 +48,14 @@ namespace SEGridManagerClient
                 return;
             }
 
+            GridManagerSession.TryRegisterIfNeeded();
+
             if (!_eventsAttached)
             {
                 MyAPIGateway.Utilities.MessageEntered += OnMessageEntered;
-                GridManagerSession.ServerReply += OnServerReply;
+                GridManagerSession.ServerReply += ProcessServerReply;
                 _eventsAttached = true;
             }
-
-            // Marshal replies on the game / input path (server handlers may be on other threads)
-            FlushServerReplies();
 
             if (!MyAPIGateway.Gui.IsCursorVisible && !MyAPIGateway.Gui.ChatEntryVisible)
             {
@@ -65,56 +63,161 @@ namespace SEGridManagerClient
             }
         }
 
-        private static void OnServerReply(string kind, string text)
+        private void ProcessServerReply(string kind, string text)
         {
             if (string.IsNullOrEmpty(text))
             {
                 return;
             }
 
-            lock (PendingLock)
+            var p = MyAPIGateway.Session?.Player;
+            if (p == null)
             {
-                PendingReplies.Add(new PendingReply { Kind = kind, Text = text });
+                return;
             }
-        }
 
-        private void FlushServerReplies()
-        {
-            List<PendingReply> batch = null;
-            lock (PendingLock)
+            if (string.Equals(kind, "get-grids", StringComparison.OrdinalIgnoreCase))
             {
-                if (PendingReplies.Count == 0)
+                _workGrids.Clear();
+                if (!GridManagerParse.TryParseGetGrids(text, _workGrids))
+                {
+                    MyAPIGateway.Utilities.ShowNotification("[SEGrid] could not parse grid list", 5000);
+                    return;
+                }
+
+                GridManagerClientUiState.SetLastGridsFromWorkList(_workGrids);
+                if (RichHudClient.Registered)
+                {
+                    GridManagerClientUiState.PendingTerminalPage = "grids";
+                }
+
+                GridManagerClientUiState.RaiseStateChanged();
+                if (!RichHudClient.Registered)
+                {
+                    ShowGridsInMission();
+                }
+
+                return;
+            }
+
+            if (string.Equals(kind, "get-blocks", StringComparison.OrdinalIgnoreCase))
+            {
+                string owner;
+                Dictionary<string, int> blocks;
+                if (!GridManagerParse.TryParseGetBlocks(text, out owner, out blocks))
+                {
+                    MyAPIGateway.Utilities.ShowNotification("[SEGrid] could not parse block list", 5000);
+                    return;
+                }
+
+                var gid = GridManagerClientUiState.PendingGetBlocksForGridId;
+                var gname = GridManagerClientUiState.PendingGetBlocksGridName;
+                GridManagerClientUiState.PendingGetBlocksForGridId = 0L;
+                GridManagerClientUiState.PendingGetBlocksGridName = string.Empty;
+                if (gid == 0L)
                 {
                     return;
                 }
 
-                batch = new List<PendingReply>(PendingReplies);
-                PendingReplies.Clear();
+                GridManagerClientUiState.CurrentDetailGridId = gid;
+                GridManagerClientUiState.CurrentDetailGridName = gname;
+                GridManagerClientUiState.SetLastBlocks(owner, blocks);
+                if (RichHudClient.Registered)
+                {
+                    GridManagerClientUiState.PendingTerminalPage = "blocks";
+                }
+
+                GridManagerClientUiState.RaiseStateChanged();
+                if (!RichHudClient.Registered)
+                {
+                    ShowBlocksInMission(gid, gname, owner ?? string.Empty, blocks);
+                }
+
+                return;
             }
 
-            for (int i = 0; i < batch.Count; i++)
+            if (string.Equals(kind, "block-delete", StringComparison.OrdinalIgnoreCase))
             {
-                var item = batch[i];
-                var body = TruncateForUi(item.Text, MissionBodyMaxChars);
-                // Grid list is always shown in a mission screen so the JSON list stays readable
-                var useMissionScreen = body.Length > ShortReplyForNotification
-                    || string.Equals(item.Kind, "get-grids", StringComparison.OrdinalIgnoreCase);
-                if (useMissionScreen)
+                bool ok;
+                if (GridManagerParse.TryParseBlockDeleteOk(text, out ok))
                 {
-                    MyAPIGateway.Utilities.ShowMissionScreen(
-                        "SE Grid Manager — " + item.Kind,
-                        "Server reply",
-                        " ",
-                        body,
-                        null,
-                        "OK");
+                    MyAPIGateway.Utilities.ShowNotification(
+                        ok ? "[SEGrid] block delete: ok" : "[SEGrid] block delete: failed",
+                        4000);
+                    if (ok && GridManagerClientUiState.CurrentDetailGridId != 0L)
+                    {
+                        GridManagerClientUiState.PendingGetBlocksForGridId = GridManagerClientUiState.CurrentDetailGridId;
+                        GridManagerClientUiState.PendingGetBlocksGridName = GridManagerClientUiState.CurrentDetailGridName;
+                        GridManagerSession.RequestGetBlocks(GridManagerClientUiState.CurrentDetailGridId, p.SteamUserId);
+                    }
                 }
-                else
-                {
-                    var line = body.Replace("\r", " ").Replace("\n", " ");
-                    MyAPIGateway.Utilities.ShowNotification("[SEGrid] " + item.Kind + ": " + line, 10000);
-                }
+
+                return;
             }
+        }
+
+        private void ShowGridsInMission()
+        {
+            var sb = new StringBuilder(4096);
+            for (int i = 0; i < GridManagerClientUiState.LastGrids.Count; i++)
+            {
+                var r = GridManagerClientUiState.LastGrids[i];
+                var name = string.IsNullOrEmpty(r.Name) ? "(unnamed)" : r.Name;
+                sb.AppendLine((i + 1) + ". " + name);
+                sb.AppendLine("   entity_id: " + r.EntityId);
+            }
+
+            if (GridManagerClientUiState.LastGrids.Count == 0)
+            {
+                sb.AppendLine("(no grids in reply)");
+            }
+
+            sb.AppendLine();
+            sb.AppendLine("Set target, then get blocks: /gmg grid 12345  (use entity_id above)");
+            sb.AppendLine("Or use Ctrl+Shift+2 (after /gmg grid … set TargetGrid for hotkeys).");
+            var body = TruncateForUi(sb.ToString(), MissionBodyMaxChars);
+            MyAPIGateway.Utilities.ShowMissionScreen("SE Grid Manager", "Your grids", " ", body, null, "OK");
+        }
+
+        private static void ShowBlocksInMission(long gridId, string gridName, string mainOwner, Dictionary<string, int> blocks)
+        {
+            var title = string.IsNullOrEmpty(gridName) ? "(grid)" : gridName;
+            if (title.Length > 40)
+            {
+                title = title.Substring(0, 37) + "…";
+            }
+
+            var sb = new StringBuilder(4096);
+            sb.AppendLine("EntityId: " + gridId);
+            sb.AppendLine("Main owner: " + (string.IsNullOrEmpty(mainOwner) ? "—" : mainOwner));
+            sb.AppendLine();
+
+            var keys = new List<string>(blocks.Keys);
+            keys.Sort(StringComparer.OrdinalIgnoreCase);
+            const int maxBlockLines = 80;
+            for (int i = 0; i < keys.Count; i++)
+            {
+                if (i >= maxBlockLines)
+                {
+                    sb.AppendLine("… " + (keys.Count - maxBlockLines) + " more types (truncated) …");
+                    break;
+                }
+
+                int cnt;
+                blocks.TryGetValue(keys[i], out cnt);
+                var k = keys[i];
+                if (k.Length > 64)
+                {
+                    k = k.Substring(0, 61) + "…";
+                }
+
+                sb.AppendLine("x" + cnt + "  " + k);
+            }
+
+            sb.AppendLine();
+            sb.AppendLine("Delete: /gmg block \"ExactTypeId\"  (copy from list), then /gmg delete or Ctrl+Shift+3");
+            var body = TruncateForUi(sb.ToString(), MissionBodyMaxChars);
+            MyAPIGateway.Utilities.ShowMissionScreen("SE Grid — " + title, "Blocks on grid", " ", body, null, "OK");
         }
 
         private static string TruncateForUi(string text, int maxLen)
@@ -125,6 +228,11 @@ namespace SEGridManagerClient
             }
 
             return text.Substring(0, maxLen) + "\n... (truncated)";
+        }
+
+        private void OpenOrRefreshGrids()
+        {
+            GridManagerClientUiCommands.OpenOrRefreshGrids();
         }
 
         private void OnMessageEntered(string messageText, ref bool sendToOthers)
@@ -161,13 +269,13 @@ namespace SEGridManagerClient
 
             if (string.Equals(verb, "getgrids", StringComparison.OrdinalIgnoreCase))
             {
-                TryGetGrids();
+                OpenOrRefreshGrids();
                 return;
             }
 
             if (string.Equals(verb, "getblocks", StringComparison.OrdinalIgnoreCase))
             {
-                TryGetBlocks();
+                TryGetBlocksFromChat();
                 return;
             }
 
@@ -188,6 +296,11 @@ namespace SEGridManagerClient
 
                 TargetGridId = gid;
                 MyAPIGateway.Utilities.ShowNotification("[SEGrid] target grid: " + gid, 3000);
+                if (RichHudClient.Registered)
+                {
+                    GridManagerClientUiState.RaiseStateChanged();
+                }
+
                 return;
             }
 
@@ -196,26 +309,20 @@ namespace SEGridManagerClient
                 var name = UnquoteBlockName(rest);
                 TargetBlockName = name ?? string.Empty;
                 MyAPIGateway.Utilities.ShowNotification("[SEGrid] target block: " + (string.IsNullOrEmpty(TargetBlockName) ? "(empty)" : TargetBlockName), 3000);
+                if (RichHudClient.Registered)
+                {
+                    GridManagerClientUiState.RaiseStateChanged();
+                }
+
                 return;
             }
 
             MyAPIGateway.Utilities.ShowNotification("[SEGrid] unknown /gmg command — use Ctrl+Shift+M for help or /gmg help", 5000);
         }
 
-        private static string UnquoteBlockName(string rest)
+        private void TryGetBlocksFromChat()
         {
-            if (string.IsNullOrEmpty(rest))
-            {
-                return string.Empty;
-            }
-
-            var s = rest.Trim();
-            if (s.Length >= 2 && s[0] == '"' && s[s.Length - 1] == '"')
-            {
-                return s.Substring(1, s.Length - 2);
-            }
-
-            return s;
+            GridManagerClientUiCommands.TryGetBlocksFromChat();
         }
 
         private void TryHotkeyMenu()
@@ -226,10 +333,9 @@ namespace SEGridManagerClient
                 return;
             }
 
-            // Chords: Ctrl+Shift+… and Alt+Shift+… to avoid clashing with vanilla F-keys and single-modifier game binds
             if (ChordCtrlShiftLetter(input, MyKeys.G) || ChordAltShiftLetter(input, MyKeys.G))
             {
-                TryGetGrids();
+                OpenOrRefreshGrids();
                 return;
             }
 
@@ -241,13 +347,13 @@ namespace SEGridManagerClient
 
             if (ChordCtrlShiftDigit1To3(input, 1) || ChordAltShiftDigit1To3(input, 1))
             {
-                TryGetGrids();
+                OpenOrRefreshGrids();
                 return;
             }
 
             if (ChordCtrlShiftDigit1To3(input, 2) || ChordAltShiftDigit1To3(input, 2))
             {
-                TryGetBlocks();
+                TryGetBlocksForHotkey();
                 return;
             }
 
@@ -269,11 +375,11 @@ namespace SEGridManagerClient
 
             if (input.IsNewKeyPressed(MyKeys.D1) || input.IsNewKeyPressed(MyKeys.NumPad1))
             {
-                TryGetGrids();
+                OpenOrRefreshGrids();
             }
             else if (input.IsNewKeyPressed(MyKeys.D2) || input.IsNewKeyPressed(MyKeys.NumPad2))
             {
-                TryGetBlocks();
+                TryGetBlocksForHotkey();
             }
             else if (input.IsNewKeyPressed(MyKeys.D3) || input.IsNewKeyPressed(MyKeys.NumPad3))
             {
@@ -285,7 +391,7 @@ namespace SEGridManagerClient
         {
             _keyMenuValidUntil = DateTime.UtcNow.AddSeconds(KeyMenuDurationSeconds);
             OpenHelpMissionScreen();
-            MyAPIGateway.Utilities.ShowNotification("[SEGrid] plain 1/2/3 (30s, no ctrl/alt/shift) or Ctrl+Shift+1…3 / Alt+Shift+1…3 — /gmg …", 6000);
+            MyAPIGateway.Utilities.ShowNotification("[SEGrid] plain 1/2/3 (30s) or Ctrl+Shift+1…3 — /gmg …", 6000);
         }
 
         private static bool ChordCtrlShiftLetter(VRage.ModAPI.IMyInput input, MyKeys key)
@@ -333,96 +439,46 @@ namespace SEGridManagerClient
         private static void OpenHelpMissionScreen()
         {
             var sb = new StringBuilder(1024);
-            sb.AppendLine("Torch Gridmanager client — same secure message IDs as the server plugin.");
+            sb.AppendLine("SE Grid Manager (script mod): mission panels + /gmg — same message IDs as the Torch server plugin.");
             sb.AppendLine();
-            sb.AppendLine("Default chords (rare in vanilla — change MyKeys in script if you still clash):");
-            sb.AppendLine("Ctrl+Shift+G  or  Alt+Shift+G  —  grid list (get-grids; opens mission panel).");
-            sb.AppendLine("Ctrl+Shift+M  or  Alt+Shift+M  —  this help; then 30s of plain 1/2/3 (no other modifiers),");
-            sb.AppendLine("  or use Ctrl+Shift+1/2/3  or  Alt+Shift+1/2/3  anytime: grids / blocks / delete.");
-            sb.AppendLine("Chat /gmg … still works if keys conflict.");
+            sb.AppendLine("With Rich HUD Master (1965654081) loaded, use the Rich HUD terminal (SE Grid Manager) for the same actions.");
             sb.AppendLine();
-            sb.AppendLine("Chat: /gmg or !gmg");
-            sb.AppendLine("  getgrids          — list grids (your Steam id from session)");
-            sb.AppendLine("  grid <EntityId>   — set target for getblocks / delete");
-            sb.AppendLine("  block <name>      — block name for delete; quote if it has spaces");
-            sb.AppendLine("  getblocks         — need target grid (grid ...)");
-            sb.AppendLine("  delete            — need grid and block (grid ... / block ...)");
-            sb.AppendLine("  help | panel      — this panel");
+            sb.AppendLine("Custom-button MyGui is not available in Data/Scripts (game whitelist).");
+            sb.AppendLine("The optional SEGridManagerClient.csproj build can use MyGui if loaded as a DLL in supported setups.");
             sb.AppendLine();
-            sb.AppendLine("Listen-server host: send from this mod is disabled (Torch already handles messages on host).");
+            sb.AppendLine("Ctrl+Shift+G / Alt+Shift+G — request grid list (mission panel with parsed list).");
+            sb.AppendLine("Ctrl+Shift+M / Alt+Shift+M — this help, then 30s plain 1/2/3, or chord 1/2/3.");
+            sb.AppendLine("Chat: /gmg getgrids, grid (id), getblocks, block (name), delete");
+            sb.AppendLine();
+            sb.AppendLine("Listen-server host: client send is disabled from the host process.");
             MyAPIGateway.Utilities.ShowMissionScreen("SE Grid Manager", "Client", " ", sb.ToString(), null, "OK");
         }
 
-        private static void TryGetGrids()
+
+        private void TryGetBlocksForHotkey()
         {
-            if (!GridManagerSession.CanSendRequests())
-            {
-                MyAPIGateway.Utilities.ShowNotification("[SEGrid] not available on listen-server host", 5000);
-                return;
-            }
-
-            var p = MyAPIGateway.Session?.Player;
-            if (p == null)
-            {
-                return;
-            }
-
-            MyAPIGateway.Utilities.ShowNotification("[SEGrid] get grids sent…", 2000);
-            GridManagerSession.RequestGetGrids(p.SteamUserId);
-        }
-
-        private static void TryGetBlocks()
-        {
-            if (!GridManagerSession.CanSendRequests())
-            {
-                MyAPIGateway.Utilities.ShowNotification("[SEGrid] not available on listen-server host", 5000);
-                return;
-            }
-
-            if (TargetGridId == 0)
-            {
-                MyAPIGateway.Utilities.ShowNotification("[SEGrid] set target grid: /gmg grid <id>", 6000);
-                return;
-            }
-
-            var p = MyAPIGateway.Session?.Player;
-            if (p == null)
-            {
-                return;
-            }
-
-            MyAPIGateway.Utilities.ShowNotification("[SEGrid] get blocks sent…", 2000);
-            GridManagerSession.RequestGetBlocks(TargetGridId, p.SteamUserId);
+            GridManagerClientUiCommands.TryGetBlocksFromChat();
         }
 
         private static void TryBlockDelete()
         {
-            if (!GridManagerSession.CanSendRequests())
+            GridManagerClientUiCommands.TryBlockDelete();
+        }
+
+        private static string UnquoteBlockName(string rest)
+        {
+            if (string.IsNullOrEmpty(rest))
             {
-                MyAPIGateway.Utilities.ShowNotification("[SEGrid] not available on listen-server host", 5000);
-                return;
+                return string.Empty;
             }
 
-            if (TargetGridId == 0)
+            var s = rest.Trim();
+            if (s.Length >= 2 && s[0] == '"' && s[s.Length - 1] == '"')
             {
-                MyAPIGateway.Utilities.ShowNotification("[SEGrid] set target: /gmg grid and /gmg block", 6000);
-                return;
+                return s.Substring(1, s.Length - 2);
             }
 
-            if (string.IsNullOrEmpty(TargetBlockName))
-            {
-                MyAPIGateway.Utilities.ShowNotification("[SEGrid] set block name: /gmg block <name>", 6000);
-                return;
-            }
-
-            var p = MyAPIGateway.Session?.Player;
-            if (p == null)
-            {
-                return;
-            }
-
-            MyAPIGateway.Utilities.ShowNotification("[SEGrid] block delete sent…", 3000);
-            GridManagerSession.RequestBlockDelete(TargetGridId, TargetBlockName, p.SteamUserId);
+            return s;
         }
 
         private static bool IsGridManagerChatLine(string line)
@@ -446,18 +502,12 @@ namespace SEGridManagerClient
             return string.Empty;
         }
 
-        private sealed class PendingReply
-        {
-            public string Kind;
-            public string Text;
-        }
-
         protected override void UnloadData()
         {
             if (_eventsAttached)
             {
                 MyAPIGateway.Utilities.MessageEntered -= OnMessageEntered;
-                GridManagerSession.ServerReply -= OnServerReply;
+                GridManagerSession.ServerReply -= ProcessServerReply;
                 _eventsAttached = false;
             }
 
